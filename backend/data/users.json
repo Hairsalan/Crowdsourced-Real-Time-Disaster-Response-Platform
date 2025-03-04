@@ -1,0 +1,16 @@
+[
+  {
+    "id": "1740710466816",
+    "username": "Arsalan2",
+    "email": "TestingEmailSJSU11@test.com",
+    "password": "$2a$10$lJL.y4zwtoBEvf2obA9HgOmp6xD56WFegQTueThHPWocdQHxgkKGm",
+    "dateJoined": "2025-02-28T02:41:06.816Z"
+  },
+  {
+    "id": "1740710707876",
+    "username": "Arsalan3",
+    "email": "TestingEmailSJSU12@test.com",
+    "password": "$2a$10$i75w7qTlPO04/CuGb.z4Wuyt204VadDT5aqwYyjXX5RRTE/e/x0em",
+    "dateJoined": "2025-02-28T02:45:07.876Z"
+  }
+]

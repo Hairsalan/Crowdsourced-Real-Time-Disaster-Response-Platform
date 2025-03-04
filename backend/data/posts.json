@@ -1,0 +1,54 @@
+[
+  {
+    "id": "1740710677886",
+    "title": "d",
+    "location": "d",
+    "description": "d",
+    "type": "fire",
+    "author": "Arsalan2",
+    "authorId": "1740710466816",
+    "createdAt": "2025-02-28T02:44:37.886Z",
+    "upvotes": 1,
+    "downvotes": 1,
+    "comments": []
+  },
+  {
+    "id": "1740710716289",
+    "title": "d",
+    "location": "d",
+    "description": "d",
+    "type": "other",
+    "author": "Arsalan3",
+    "authorId": "1740710707876",
+    "createdAt": "2025-02-28T02:45:16.289Z",
+    "upvotes": 0,
+    "downvotes": 0,
+    "comments": []
+  },
+  {
+    "id": "1740710726419",
+    "title": "d",
+    "location": "d",
+    "description": "d",
+    "type": "earthquake",
+    "author": "Arsalan3",
+    "authorId": "1740710707876",
+    "createdAt": "2025-02-28T02:45:26.419Z",
+    "upvotes": 0,
+    "downvotes": 0,
+    "comments": []
+  },
+  {
+    "id": "1740714303909",
+    "title": "s",
+    "location": "s",
+    "description": "s",
+    "type": "fire",
+    "author": "Arsalan2",
+    "authorId": "1740710466816",
+    "createdAt": "2025-02-28T03:45:03.910Z",
+    "upvotes": 2,
+    "downvotes": 0,
+    "comments": []
+  }
+]
