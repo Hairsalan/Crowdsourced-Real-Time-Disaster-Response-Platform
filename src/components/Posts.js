@@ -157,7 +157,12 @@ function Posts() {
                 posts.map((post) => (
                   <li key={post.id} style={postItemStyle} onClick={() => handlePostClick(post)}>
                     <h3 style={postTitleStyle}>{post.title}</h3>
-                    <p style={postInfoStyle}>Location: {post.location}</p>
+
+                    <p style={postInfoStyle}>
+  Location: {post.location?.displayName || `${post.location?.latitude}, ${post.location?.longitude}`}
+</p>
+
+
                     <p style={postInfoStyle}>Posted by: {post.author} • {formatDate(post.createdAt)}</p>
                     {post.description && <p style={{ margin: "10px 0" }}>{post.description}</p>}
                     <div style={voteContainerStyle}>

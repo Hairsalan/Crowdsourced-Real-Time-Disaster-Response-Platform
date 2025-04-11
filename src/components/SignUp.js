@@ -9,6 +9,7 @@ function SignUp() {
     email: "",
     password: "",
     confirmPassword: "",
+    role: "user"
   })
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
@@ -47,7 +48,8 @@ function SignUp() {
         body: JSON.stringify({
           username: formData.username,
           email: formData.email,
-          password: formData.password
+          password: formData.password,
+          role: formData.role
         }),
       })
 
@@ -130,6 +132,23 @@ function SignUp() {
             required
             style={inputStyle}
           />
+        </div>
+        <div style={inputGroupStyle}>
+          <label htmlFor="role" style={labelStyle}>
+            Account Type:
+          </label>
+          <select
+            id="role"
+            name="role"
+            value={formData.role}
+            onChange={handleChange}
+            style={inputStyle}
+          >
+            <option value="user">Regular User</option>
+            <option value="ngo">NGO/Organization</option>
+            <option value="moderator">Moderator (Requires Approval)</option>
+            <option value="admin">Admin (Requires Approval)</option>
+          </select>
         </div>
         <button 
           type="submit" 

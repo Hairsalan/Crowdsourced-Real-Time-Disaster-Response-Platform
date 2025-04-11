@@ -6,25 +6,26 @@ const PostSchema = new Schema({
     type: String,
     required: true
   },
-  location: {
-    type: String,
-    required: true
-  },
   description: {
     type: String,
     required: true
   },
   type: {
     type: String,
-    enum: ['fire', 'flood', 'earthquake', 'other'],
+    enum: ['fire', 'flood', 'earthquake', 'hurricane', 'tornado', 'other'],
     required: true
+  },
+  location: {
+    latitude: Number,
+    longitude: Number,
+    displayName: String
   },
   author: {
     type: String,
     required: true
   },
   authorId: {
-    type: Schema.Types.ObjectId,
+    type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
   },
@@ -43,10 +44,7 @@ const PostSchema = new Schema({
   comments: [{
     text: String,
     author: String,
-    authorId: {
-      type: Schema.Types.ObjectId,
-      ref: 'User'
-    },
+    authorId: mongoose.Schema.Types.ObjectId,
     createdAt: {
       type: Date,
       default: Date.now
