@@ -34,12 +34,18 @@ const PostSchema = new Schema({
     default: Date.now
   },
   upvotes: {
-    type: Number,
-    default: 0
+    type: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }],
+    default: []
   },
   downvotes: {
-    type: Number,
-    default: 0
+    type: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }],
+    default: []
   },
   comments: [{
     text: String,

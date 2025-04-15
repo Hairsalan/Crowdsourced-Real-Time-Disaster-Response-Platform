@@ -11,6 +11,10 @@ function Posts() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const navigate = useNavigate()
+  // For upvote/downvote feedback
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+  const [feedbackType, setFeedbackType] = useState(''); // 'success' or 'error'
+  const [feedbackVisible, setFeedbackVisible] = useState(false);
 
   // Check if user is logged in
   const isAuthenticated = () => {
@@ -23,15 +27,15 @@ function Posts() {
       try {
         const response = await fetch('http://localhost:5000/api/posts')
         const data = await response.json()
-        
+
         if (!response.ok) {
           throw new Error('Failed to fetch posts')
         }
-        
+
         // Split posts between community and news (assuming posts with type 'news' are news posts)
         const community = data.filter(post => post.type !== 'news')
         const news = data.filter(post => post.type === 'news')
-        
+
         setPosts(community)
         setNewsPosts(news)
       } catch (error) {
@@ -40,7 +44,7 @@ function Posts() {
         setLoading(false)
       }
     }
-    
+
     fetchPosts()
   }, [])
 
@@ -48,44 +52,78 @@ function Posts() {
     setSelectedPost(selectedPost === post ? null : post)
   }
 
+  // Handle upvote and downvote functionality
   const handleVote = async (postId, voteType) => {
     if (!isAuthenticated()) {
-      navigate('/login')
-      return
+      navigate('/login');
+      return;
     }
     
     try {
-      const token = localStorage.getItem('token')
+      const token = localStorage.getItem('token');
+      
       const response = await fetch(`http://localhost:5000/api/posts/${postId}/${voteType}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
-      })
-      
-      const updatedPost = await response.json()
+      });
       
       if (!response.ok) {
-        throw new Error('Failed to vote')
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.message || 'Failed to vote');
       }
       
+      const updatedPost = await response.json();
+      
       // Update posts state with the updated post
-      setPosts(posts.map(post => post.id === postId ? updatedPost : post))
+      setPosts(posts.map(post => 
+        post._id === postId ? updatedPost : post
+      ));
+      
+      setFeedbackMessage(`Successfully ${voteType}d the post!`);
+      setFeedbackType('success');
+      setFeedbackVisible(true);
+      
+      setTimeout(() => {
+        setFeedbackVisible(false);
+      }, 3000);
+      
     } catch (error) {
-      setError(error.message)
+      console.error('Vote error:', error);
+      setError(error.message);
+      
+      setFeedbackMessage(error.message || `Failed to ${voteType} the post`);
+      setFeedbackType('error');
+      setFeedbackVisible(true);
+      
+      setTimeout(() => {
+        setFeedbackVisible(false);
+      }, 3000);
     }
-  }
+  };
+  
+
+  const getCurrentUserId = () => {
+    try {
+      const user = JSON.parse(localStorage.getItem('user'));
+      return user?.id;
+    } catch (error) {
+      console.error('Error getting user ID:', error);
+      return null;
+    }
+  };
 
   const formatDate = (dateString) => {
     const date = new Date(dateString)
     const now = new Date()
-    
+
     const diffTime = Math.abs(now - date)
     const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
     const diffHours = Math.floor(diffTime / (1000 * 60 * 60))
     const diffMinutes = Math.floor(diffTime / (1000 * 60))
-    
+
     if (diffDays > 0) {
       return `${diffDays} ${diffDays === 1 ? 'day' : 'days'} ago`
     } else if (diffHours > 0) {
@@ -99,7 +137,7 @@ function Posts() {
     <div>
       <h1 style={headerStyle}>Posts</h1>
       {error && <div style={{ color: "red", marginBottom: "15px" }}>{error}</div>}
-      
+
       <div style={tabStyle}>
         <button
           style={activeTab === "community" ? activeTabStyle : inactiveTabStyle}
@@ -107,27 +145,27 @@ function Posts() {
         >
           Community
         </button>
-        <button 
-          style={activeTab === "news" ? activeTabStyle : inactiveTabStyle} 
+        <button
+          style={activeTab === "news" ? activeTabStyle : inactiveTabStyle}
           onClick={() => setActiveTab("news")}
         >
           News
         </button>
       </div>
-      
+
       {!isAuthenticated() && activeTab === "community" && (
         <div style={{ marginBottom: "20px", padding: "10px", backgroundColor: "#f8f9fa", borderRadius: "5px" }}>
           <p style={{ margin: 0 }}>
-            <a href="/login" style={{ color: "#007bff", textDecoration: "none" }}>Log in</a> or 
+            <a href="/login" style={{ color: "#007bff", textDecoration: "none" }}>Log in</a> or
             <a href="/signup" style={{ color: "#007bff", textDecoration: "none", marginLeft: "5px" }}>sign up</a> to post in the community section.
           </p>
         </div>
       )}
-      
+
       {isAuthenticated() && activeTab === "community" && (
         <div style={{ marginBottom: "20px" }}>
-          <a 
-            href="/report" 
+          <a
+            href="/report"
             style={{
               display: "inline-block",
               padding: "8px 15px",
@@ -142,10 +180,10 @@ function Posts() {
           </a>
         </div>
       )}
-      
+
       <div style={postsContainerStyle}>
         <h2 style={subHeaderStyle}>{activeTab === "community" ? "Community Reports" : "Latest News"}</h2>
-        
+
         {loading ? (
           <p>Loading posts...</p>
         ) : (
@@ -159,30 +197,36 @@ function Posts() {
                     <h3 style={postTitleStyle}>{post.title}</h3>
 
                     <p style={postInfoStyle}>
-  Location: {post.location?.displayName || `${post.location?.latitude}, ${post.location?.longitude}`}
-</p>
+                      Location: {post.location?.displayName || `${post.location?.latitude}, ${post.location?.longitude}`}
+                    </p>
 
 
                     <p style={postInfoStyle}>Posted by: {post.author} • {formatDate(post.createdAt)}</p>
                     {post.description && <p style={{ margin: "10px 0" }}>{post.description}</p>}
                     <div style={voteContainerStyle}>
-                      <button 
-                        style={voteButtonStyle} 
+                      <button
+                        style={{
+                          ...voteButtonStyle,
+                          backgroundColor: post.upvotes?.includes(getCurrentUserId()) ? '#e6f7ff' : '#f0f0f0'
+                        }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleVote(post.id, 'upvote');
+                          handleVote(post._id, 'upvote');
                         }}
                       >
-                        Upvote ({post.upvotes})
+                        Upvote ({Array.isArray(post.upvotes) ? post.upvotes.length : 0})
                       </button>
-                      <button 
-                        style={voteButtonStyle} 
+                      <button
+                        style={{
+                          ...voteButtonStyle,
+                          backgroundColor: post.downvotes?.includes(getCurrentUserId()) ? '#fff1f0' : '#f0f0f0'
+                        }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleVote(post.id, 'downvote');
+                          handleVote(post._id, 'downvote');
                         }}
                       >
-                        Downvote ({post.downvotes})
+                        Downvote ({Array.isArray(post.downvotes) ? post.downvotes.length : 0})
                       </button>
                     </div>
                     {selectedPost === post && (

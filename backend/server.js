@@ -222,35 +222,107 @@ app.post('/api/posts', authenticateToken, async (req, res) => {
 });
 
 // Upvote/Downvote routes
-app.post('/api/posts/:id/upvote', authenticateToken, async (req, res) => {
+app.post('/api/posts/:id/:voteType', authenticateToken, async (req, res) => {
   try {
-    console.log(`Upvoting post: ${req.params.id}`);
-    const post = await Post.findById(req.params.id);
-    if (!post) return res.status(404).json({ message: 'Post not found' });
-    
-    post.upvotes += 1;
+    console.log(`Processing ${req.params.voteType} for post: ${req.params.id}`);
+    const { id, voteType } = req.params;
+    const userId = req.user.id; // From JWT token
+
+    // Find the post by ID
+    const post = await Post.findById(id);
+    if (!post) {
+      return res.status(404).json({ message: 'Post not found' });
+    }
+
+    // Check if upvotes and downvotes are arrays, convert if not
+    if (!Array.isArray(post.upvotes)) {
+      post.upvotes = post.upvotes ? [post.upvotes] : [];
+    }
+
+    if (!Array.isArray(post.downvotes)) {
+      post.downvotes = post.downvotes ? [post.downvotes] : [];
+    }
+
+    // Handle upvote
+    if (voteType === 'upvote') {
+      // Remove user from downvotes if present
+      post.downvotes = post.downvotes.filter(id => id.toString() !== userId.toString());
+      // Toggle upvote status
+      const userUpvoteIndex = post.upvotes.findIndex(id => id.toString() === userId.toString());
+      if (userUpvoteIndex !== -1) {
+        // User already upvoted, so remove the upvote
+        post.upvotes.splice(userUpvoteIndex, 1);
+        console.log(`Removed upvote from user ${userId}`);
+      } else {
+        // Add the upvote
+        post.upvotes.push(userId);
+        console.log(`Added upvote from user ${userId}`);
+      }
+    }
+    // Handle downvote
+    else if (voteType === 'downvote') {
+      // Remove user from upvotes if present
+      post.upvotes = post.upvotes.filter(id => id.toString() !== userId.toString());
+      // Toggle downvote status
+      const userDownvoteIndex = post.downvotes.findIndex(id => id.toString() === userId.toString());
+      if (userDownvoteIndex !== -1) {
+        // User already downvoted, so remove the downvote
+        post.downvotes.splice(userDownvoteIndex, 1);
+        console.log(`Removed downvote from user ${userId}`);
+      } else {
+        // Add the downvote
+        post.downvotes.push(userId);
+        console.log(`Added downvote from user ${userId}`);
+      }
+    }
+    else {
+      return res.status(400).json({ message: 'Invalid vote type' });
+    }
+
+    // Save the updated post
     await post.save();
-    
+    // Return the updated post
     res.json(post);
   } catch (error) {
-    console.error('Upvote error:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    console.error('Vote handling error details:', {
+      postId: req.params.id,
+      voteType: req.params.voteType,
+      userId: req.user?.id,
+      error: error.message,
+      stack: error.stack
+    });
+    res.status(500).json({ message: 'Server error processing vote' });
   }
 });
 
-app.post('/api/posts/:id/downvote', authenticateToken, async (req, res) => {
+// Migration route to convert upvote/downvote counts to arrays
+app.get('/api/migrate-votes', authenticateToken, checkRole(['admin']), async (req, res) => {
   try {
-    console.log(`Downvoting post: ${req.params.id}`);
-    const post = await Post.findById(req.params.id);
-    if (!post) return res.status(404).json({ message: 'Post not found' });
+    console.log('Starting vote migration...');
+    const posts = await Post.find({});
+    let migratedCount = 0;
     
-    post.downvotes += 1;
-    await post.save();
+    for (const post of posts) {
+      // Skip already migrated posts
+      if (Array.isArray(post.upvotes) && Array.isArray(post.downvotes)) {
+        continue;
+      }
+      
+      // Convert upvotes and downvotes to arrays if they're not already
+      post.upvotes = Array.isArray(post.upvotes) ? post.upvotes : [];
+      post.downvotes = Array.isArray(post.downvotes) ? post.downvotes : [];
+      
+      await post.save();
+      migratedCount++;
+    }
     
-    res.json(post);
+    res.json({
+      message: 'Vote migration complete',
+      migratedPosts: migratedCount
+    });
   } catch (error) {
-    console.error('Downvote error:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    console.error('Vote migration error:', error);
+    res.status(500).json({ message: 'Migration error', error: error.message });
   }
 });
 
