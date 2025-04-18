@@ -15,6 +15,10 @@ function Posts() {
   const [feedbackMessage, setFeedbackMessage] = useState('');
   const [feedbackType, setFeedbackType] = useState(''); // 'success' or 'error'
   const [feedbackVisible, setFeedbackVisible] = useState(false);
+  // For searching and filtering posts
+  const [searchTerm, setSearchTerm] = useState('')
+  const [sortOption, setSortOption] = useState('newest')
+  const [typeFilter, setTypeFilter] = useState('all')
 
   // Check if user is logged in
   const isAuthenticated = () => {
@@ -58,10 +62,10 @@ function Posts() {
       navigate('/login');
       return;
     }
-    
+
     try {
       const token = localStorage.getItem('token');
-      
+
       const response = await fetch(`http://localhost:5000/api/posts/${postId}/${voteType}`, {
         method: 'POST',
         headers: {
@@ -69,41 +73,40 @@ function Posts() {
           'Content-Type': 'application/json'
         }
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);
         throw new Error(errorData?.message || 'Failed to vote');
       }
-      
+
       const updatedPost = await response.json();
-      
+
       // Update posts state with the updated post
-      setPosts(posts.map(post => 
+      setPosts(posts.map(post =>
         post._id === postId ? updatedPost : post
       ));
-      
+
       setFeedbackMessage(`Successfully ${voteType}d the post!`);
       setFeedbackType('success');
       setFeedbackVisible(true);
-      
+
       setTimeout(() => {
         setFeedbackVisible(false);
       }, 3000);
-      
+
     } catch (error) {
       console.error('Vote error:', error);
       setError(error.message);
-      
+
       setFeedbackMessage(error.message || `Failed to ${voteType} the post`);
       setFeedbackType('error');
       setFeedbackVisible(true);
-      
+
       setTimeout(() => {
         setFeedbackVisible(false);
       }, 3000);
     }
   };
-  
 
   const getCurrentUserId = () => {
     try {
@@ -131,7 +134,34 @@ function Posts() {
     } else {
       return `${diffMinutes} ${diffMinutes === 1 ? 'minute' : 'minutes'} ago`
     }
-  }
+  };
+
+  // Handle search and filter functionality
+  const getFilteredAndSortedPosts = () => {
+    let filteredPosts = posts.filter(post => {
+      const matchesSearch = post.title.toLowerCase().includes(searchTerm.toLowerCase())
+      const matchesType = typeFilter === 'all' || post.type === typeFilter
+      return matchesSearch && matchesType
+    })
+
+    // Then sort based on selected option
+    switch (sortOption) {
+      case 'newest':
+        return filteredPosts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      case 'oldest':
+        return filteredPosts.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+      case 'most-upvotes':
+        return filteredPosts.sort((a, b) => b.upvotes.length - a.upvotes.length)
+      case 'least-upvotes':
+        return filteredPosts.sort((a, b) => a.upvotes.length - b.upvotes.length)
+      case 'a-z':
+        return filteredPosts.sort((a, b) => a.title.localeCompare(b.title))
+      case 'z-a':
+        return filteredPosts.sort((a, b) => b.title.localeCompare(a.title))
+      default:
+        return filteredPosts
+    }
+  };
 
   return (
     <div>
@@ -188,21 +218,97 @@ function Posts() {
           <p>Loading posts...</p>
         ) : (
           <ul style={postListStyle}>
+            {activeTab === "community" && (
+              <>
+                {/* Search and filter options */}
+                <div className="filter-container" style={filterContainerStyle}>
+                  <div className="search-bar" style={searchBarStyle}>
+                    <input
+                      type="text"
+                      placeholder="Search posts by title..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="search-input"
+                      style={searchInputStyle}
+                    />
+                  </div>
+
+                  <div className="filter-options" style={filterOptionsStyle}>
+                    <select
+                      value={sortOption}
+                      onChange={(e) => setSortOption(e.target.value)}
+                      className="sort-select"
+                      style={selectStyle}
+                    >
+                      <option value="newest">Most Recent</option>
+                      <option value="oldest">Oldest First</option>
+                      <option value="most-upvotes">Most Upvotes</option>
+                      <option value="least-upvotes">Least Upvotes</option>
+                      <option value="a-z">A-Z</option>
+                      <option value="z-a">Z-A</option>
+                    </select>
+                    <select
+                      value={typeFilter}
+                      onChange={(e) => setTypeFilter(e.target.value)}
+                      className="type-select"
+                      style={selectStyle}
+                    >
+                      <option value="all">All Disaster Types</option>
+                      <option value="fire">Fire</option>
+                      <option value="flood">Flood</option>
+                      <option value="earthquake">Earthquake</option>
+                      <option value="hurricane">Hurricane</option>
+                      <option value="tornado">Tornado</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+
+                  {typeFilter !== 'all' && (
+                    <button
+                      onClick={() => setTypeFilter('all')}
+                      className="clear-filter-btn"
+                      style={clearFilterBtnStyle}
+                    >
+                      Clear Filter
+                    </button>
+                  )}
+                </div>
+
+                {/* Show number of results from filter/search */}
+                <div className="results-count" style={resultsCountStyle}>
+                  {getFilteredAndSortedPosts().length} {getFilteredAndSortedPosts().length === 1 ? 'post' : 'posts'} found
+                </div>
+              </>
+            )}
+            {/* Show posts/community reports */}
             {activeTab === "community" ? (
-              posts.length === 0 ? (
-                <p>No community posts yet. Be the first to post!</p>
+              getFilteredAndSortedPosts().length === 0 ? (
+                <p>No posts match your search criteria</p>
               ) : (
-                posts.map((post) => (
-                  <li key={post.id} style={postItemStyle} onClick={() => handlePostClick(post)}>
+                getFilteredAndSortedPosts().map((post) => (
+                  <li key={post._id} style={postItemStyle} onClick={() => handlePostClick(post)}>
                     <h3 style={postTitleStyle}>{post.title}</h3>
-
-                    <p style={postInfoStyle}>
-                      Location: {post.location?.displayName || `${post.location?.latitude}, ${post.location?.longitude}`}
+                    <p style={{ ...postInfoStyle, marginBottom: "5px" }}>
+                      <span className="disaster-tag" style={{
+                        display: "inline-block",
+                        padding: "4px 8px",
+                        backgroundColor: getDisasterColor(post.type),
+                        color: "#fff",
+                        borderRadius: "4px",
+                        fontWeight: "bold",
+                        fontSize: "0.875rem",
+                        marginBottom: "8px"
+                      }}>
+                        {post.type.charAt(0).toUpperCase() + post.type.slice(1)}
+                      </span>
                     </p>
-
-
-                    <p style={postInfoStyle}>Posted by: {post.author} • {formatDate(post.createdAt)}</p>
+                    <p style={postInfoStyle}>
+                      <strong>Location:</strong> {post.location?.displayName || `${post.location?.latitude}, ${post.location?.longitude}`}
+                    </p>
+                    <p style={postInfoStyle}><strong>Posted by:</strong> {post.author} • {formatDate(post.createdAt)}</p>
                     {post.description && <p style={{ margin: "10px 0" }}>{post.description}</p>}
+
+                    {/* Upvote/Downvote buttons */}
                     <div style={voteContainerStyle}>
                       <button
                         style={{
@@ -229,6 +335,8 @@ function Posts() {
                         Downvote ({Array.isArray(post.downvotes) ? post.downvotes.length : 0})
                       </button>
                     </div>
+
+                    {/* Comment section */}
                     {selectedPost === post && (
                       <div style={commentSectionStyle}>
                         <h4>Comments</h4>
@@ -367,6 +475,78 @@ const commentSectionStyle = {
   marginTop: "15px",
   paddingTop: "15px",
   borderTop: "1px solid #eee",
+}
+
+// Styles for search and filter options
+
+const filterContainerStyle = {
+  display: "flex",
+  flexWrap: "wrap",
+  alignItems: "center",
+  gap: "15px",
+  marginBottom: "20px",
+  padding: "15px",
+  backgroundColor: "#f5f5f5",
+  borderRadius: "8px",
+}
+
+const searchBarStyle = {
+  flex: 1,
+  minWidth: "200px",
+}
+
+const searchInputStyle = {
+  width: "100%",
+  padding: "8px 12px",
+  border: "1px solid #ddd",
+  borderRadius: "4px",
+  fontSize: "14px",
+}
+
+const filterOptionsStyle = {
+  display: "flex",
+  gap: "10px",
+}
+
+const selectStyle = {
+  padding: "8px 12px",
+  border: "1px solid #ddd",
+  borderRadius: "4px",
+  backgroundColor: "white",
+  fontSize: "14px",
+}
+
+const clearFilterBtnStyle = {
+  padding: "8px 12px",
+  backgroundColor: "#f0f0f0",
+  border: "1px solid #ddd",
+  borderRadius: "4px",
+  cursor: "pointer",
+  fontSize: "14px",
+}
+
+const resultsCountStyle = {
+  marginBottom: "15px",
+  fontSize: "14px",
+  color: "#666",
+}
+
+// Disaster type color mapping
+const getDisasterColor = (type) => {
+  switch (type.toLowerCase()) {
+    case 'earthquake':
+      return '#dc3545'; // red
+    case 'flood':
+      return '#0d6efd'; // blue
+    case 'fire':
+      return '#fd7e14'; // orange
+    case 'hurricane':
+      return '#6f42c1'; // purple
+    case 'tornado':
+      return '#20c997'; // teal
+    default:
+      return '#6c757d'; // gray
+  }
 }
 
 export default Posts
