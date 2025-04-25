@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useNavigate, Link } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
+import { useAuth } from "../AuthContext"
 
 function Login() {
   const [formData, setFormData] = useState({
@@ -11,25 +12,16 @@ function Login() {
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
   const [loading, setLoading] = useState(false)
-  const [loginAttempted, setLoginAttempted] = useState(false)
+  const { login } = useAuth()
   const navigate = useNavigate()
 
   // Clear any existing auth data when the login page loads
   useEffect(() => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    localStorage.removeItem('userLocation'); // Clear saved location
     console.log("Auth data cleared on login page load");
   }, []);
-
-  // This effect runs after a successful login
-  useEffect(() => {
-    // Check if we just logged in successfully
-    if (loginAttempted && localStorage.getItem('token')) {
-      console.log("Login detected, redirecting to dashboard...");
-      // Force a page reload to ensure the app picks up the auth state change
-      window.location.href = '/dashboard';
-    }
-  }, [loginAttempted]);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value })
@@ -60,15 +52,29 @@ function Login() {
         throw new Error(data.message || 'Login failed')
       }
 
-      // Store token and user info in localStorage
-      localStorage.setItem('token', data.token)
-      localStorage.setItem('user', JSON.stringify(data.user))
+      // Check if user is banned before allowing login
+      if (data.user.banned) {
+        const banMessage = data.user.banExpires
+          ? `Your account has been banned until ${new Date(data.user.banExpires).toLocaleString()}.`
+          : 'Your account has been permanently banned.';
+        throw new Error(banMessage);
+      }
+
+      // Use AuthContext login function instead of manually setting localStorage
+      // Wait for the async login to complete so context is fully ready
+      await login(data.user, data.token);
       
       setSuccess("Login successful! Redirecting...");
       console.log("Login successful - token stored:", data.token.substring(0, 20) + "...");
       
-      // Set login attempted to trigger the redirect effect
-      setLoginAttempted(true);
+      // Conditionally route based on whether the user has a saved location
+      if (data.user.location) {
+        // User has a location, send them to dashboard
+        navigate("/dashboard", { replace: true });
+      } else {
+        // User needs to set location, send them to settings
+        navigate("/settings", { replace: true });
+      }
 
     } catch (error) {
       console.error("Login error:", error)

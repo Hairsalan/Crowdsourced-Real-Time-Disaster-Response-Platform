@@ -18,7 +18,7 @@ const DISASTER_KEYWORDS = [
 ];
 
 // Get disaster alerts from GDACS (Global Disaster Alert and Coordination System)
-export const getDisasterAlerts = async () => {
+export const getDisasterAlerts = async (customRadius = null, token = null) => {
   try {
     // For development, return dummy data instead of making API calls
     // In production, you would uncomment the API call below
@@ -38,7 +38,7 @@ export const getDisasterAlerts = async () => {
     
     // Extract disaster information from XML
     const items = xmlDoc.querySelectorAll('item');
-    const alerts = Array.from(items).map(item => {
+    const allAlerts = Array.from(items).map(item => {
       // Extract coordinates from GeoRSS point
       const point = item.getElementsByTagNameNS('http://www.georss.org/georss', 'point')[0]?.textContent;
       let latitude = null;
@@ -64,23 +64,33 @@ export const getDisasterAlerts = async () => {
       };
     });
     
+    // Filter alerts by user radius
+    const alerts = filterAlertsByRadius(allAlerts, customRadius, token);
+    
     return alerts;
     */
     
     // Return dummy data for development
-    return getDummyDisasterAlerts();
+    const allAlerts = getDummyDisasterAlerts();
+    
+    // Filter alerts by user radius
+    const alerts = filterAlertsByRadius(allAlerts, customRadius, token);
+    
+    return alerts;
   } catch (error) {
     console.error('Error fetching disaster alerts:', error);
     // Return dummy data as fallback
-    return getDummyDisasterAlerts();
+    const allAlerts = getDummyDisasterAlerts();
+    const alerts = filterAlertsByRadius(allAlerts, customRadius, token);
+    return alerts;
   }
 };
 
 // Fetch news about disasters (requires News API key)
-export const getDisasterNews = async (location = null) => {
+export const getDisasterNews = async (customRadius = null, token = null) => {
   try {
-    // Get user's location if not provided
-    const userLocation = location || getStoredLocation();
+    // Get user's location from the context or localStorage
+    const userLocation = getStoredLocation();
     
     // For development, return dummy data instead of making API calls
     // In production, you would uncomment the API call below
@@ -99,7 +109,13 @@ export const getDisasterNews = async (location = null) => {
       }
     }
     
-    const response = await fetch(url);
+    // Add authorization if token exists
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    const response = await fetch(url, { headers });
     
     if (!response.ok) {
       throw new Error('Failed to fetch news');
@@ -107,8 +123,8 @@ export const getDisasterNews = async (location = null) => {
     
     const data = await response.json();
     
-    // Process and return news articles
-    return data.articles.map(article => ({
+    // Process news articles
+    const allNews = data.articles.map(article => ({
       id: article.url,
       title: article.title,
       description: article.description,
@@ -119,16 +135,127 @@ export const getDisasterNews = async (location = null) => {
       publishedAt: article.publishedAt,
       type: 'news'
     }));
+    
+    // Filter news by user radius
+    const filteredNews = filterNewsByRadius(allNews, customRadius, token);
+    
+    return filteredNews;
     */
     
     // Return dummy data for development
-    return getDummyDisasterNews();
+    const allNews = getDummyDisasterNews();
+    
+    // Filter news by user radius
+    const filteredNews = filterNewsByRadius(allNews, customRadius, token);
+    
+    return filteredNews;
   } catch (error) {
     console.error('Error fetching disaster news:', error);
     
     // Return dummy data if API fails or is not set up
-    return getDummyDisasterNews();
+    const allNews = getDummyDisasterNews();
+    const filteredNews = filterNewsByRadius(allNews, customRadius, token);
+    return filteredNews;
   }
+};
+
+// Filter alerts by user's radius
+const filterAlertsByRadius = (alerts, customRadius = null, token = null) => {
+  const userLocation = getStoredLocation();
+  
+  // If no user location, return all alerts
+  if (!userLocation || !userLocation.latitude || !userLocation.longitude) {
+    return alerts;
+  }
+  
+  // Get user's preferred radius (use custom radius if provided)
+  const radiusMiles = customRadius !== null ? customRadius : (userLocation.radiusMiles || 50);
+  
+  console.log(`Filtering alerts within ${radiusMiles} miles of user location [${userLocation.latitude}, ${userLocation.longitude}]`);
+  
+  // Filter alerts within the radius
+  const filteredAlerts = alerts.filter(alert => {
+    // Skip alerts without coordinates
+    if (!alert.latitude || !alert.longitude) {
+      return false;
+    }
+    
+    // Parse coordinates as floats to ensure they're numbers
+    const alertLat = parseFloat(alert.latitude);
+    const alertLng = parseFloat(alert.longitude);
+    
+    if (isNaN(alertLat) || isNaN(alertLng)) {
+      console.warn("Invalid coordinates for alert:", alert.title);
+      return false;
+    }
+    
+    // Calculate distance using Haversine formula (same as in server)
+    const R = 6371; // Earth's radius in km
+    const dLat = (alertLat - userLocation.latitude) * Math.PI / 180;
+    const dLon = (alertLng - userLocation.longitude) * Math.PI / 180;
+    const lat1 = userLocation.latitude * Math.PI / 180;
+    const lat2 = alertLat * Math.PI / 180;
+    
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1) * Math.cos(lat2) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const distanceKm = R * c;
+    const distanceMiles = distanceKm * 0.621371;
+    
+    // Add distance to alert object
+    alert.distance = distanceMiles;
+    
+    console.log(`Alert "${alert.title}" at [${alertLat}, ${alertLng}] is ${distanceMiles.toFixed(2)} miles from user location`);
+    
+    // Include if within radius
+    return distanceMiles <= radiusMiles;
+  });
+  
+  console.log(`Filtered ${alerts.length} alerts down to ${filteredAlerts.length} within ${radiusMiles} miles`);
+  
+  return filteredAlerts;
+};
+
+// Filter news by user's radius (based on keywords/location terms for API results)
+const filterNewsByRadius = (news, customRadius = null, token = null) => {
+  // Get user's location from localStorage
+  const userLocation = getStoredLocation();
+  
+  // If no user location, return all news
+  if (!userLocation || !userLocation.latitude || !userLocation.longitude) {
+    return news;
+  }
+  
+  // If there's a valid token, use server-side filtering
+  if (token) {
+    // In production, you would make a call to the server for filtering
+    // For now, just use client-side filtering
+  }
+  
+  // Get user's preferred radius (use custom radius if provided)
+  const radiusMiles = customRadius !== null ? customRadius : (userLocation.radiusMiles || 50);
+  
+  console.log(`Filtering news within ${radiusMiles} miles of user location`);
+  
+  // Filter news by their distance property
+  // We now calculate actual distances for each item using the Haversine formula
+  // based on the user's current location and the item's coordinates
+  const filteredNews = news.filter(item => {
+    // Ensure item has a distance value
+    if (typeof item.distance === 'undefined') {
+      console.warn(`News item "${item.title}" missing distance information`);
+      return false;
+    }
+    
+    console.log(`News item "${item.title}" is ${item.distance.toFixed(1)} miles from user location (radius: ${radiusMiles})`);
+    return item.distance <= radiusMiles;
+  });
+  
+  console.log(`Filtered ${news.length} news items down to ${filteredNews.length} within ${radiusMiles} miles`);
+  
+  return filteredNews;
 };
 
 // Extract relevant location terms for better news filtering
@@ -165,7 +292,15 @@ const calculateDistanceToUser = (latitude, longitude) => {
 
 // Get dummy disaster alerts for testing
 const getDummyDisasterAlerts = () => {
-  return [
+  const userLocation = getStoredLocation();
+  const calculateRealDistance = (lat, lng) => {
+    if (!userLocation || !userLocation.latitude || !userLocation.longitude) {
+      return 1000; // Default large distance if no user location
+    }
+    return calculateDistance(userLocation.latitude, userLocation.longitude, lat, lng);
+  };
+
+  const dummyAlerts = [
     {
       id: 'eq-2023-03-15-turkey',
       title: 'Magnitude 5.6 Earthquake in Turkey',
@@ -174,8 +309,7 @@ const getDummyDisasterAlerts = () => {
       publicationDate: '2023-03-15T08:34:21Z',
       category: 'Earthquake',
       latitude: 38.7223,
-      longitude: 43.4801,
-      distance: 45.3
+      longitude: 43.4801
     },
     {
       id: 'fl-2023-03-14-italy',
@@ -185,8 +319,7 @@ const getDummyDisasterAlerts = () => {
       publicationDate: '2023-03-14T16:45:00Z',
       category: 'Flood',
       latitude: 45.4654,
-      longitude: 9.1859,
-      distance: 125.7
+      longitude: 9.1859
     },
     {
       id: 'wf-2023-03-13-california',
@@ -196,8 +329,7 @@ const getDummyDisasterAlerts = () => {
       publicationDate: '2023-03-13T21:15:33Z',
       category: 'Wildfire',
       latitude: 34.1083,
-      longitude: -117.2898,
-      distance: 876.2
+      longitude: -117.2898
     },
     {
       id: 'tc-2023-03-12-fiji',
@@ -207,8 +339,7 @@ const getDummyDisasterAlerts = () => {
       publicationDate: '2023-03-12T09:30:15Z',
       category: 'Tropical Cyclone',
       latitude: -17.7134,
-      longitude: 178.0650,
-      distance: 1245.8
+      longitude: 178.0650
     },
     {
       id: 'dr-2023-03-11-ethiopia',
@@ -218,8 +349,7 @@ const getDummyDisasterAlerts = () => {
       publicationDate: '2023-03-11T14:20:45Z',
       category: 'Drought',
       latitude: 9.1450,
-      longitude: 40.4897,
-      distance: 1502.3
+      longitude: 40.4897
     },
     {
       id: 'ls-2023-03-10-nepal',
@@ -229,15 +359,28 @@ const getDummyDisasterAlerts = () => {
       publicationDate: '2023-03-10T11:05:38Z',
       category: 'Landslide',
       latitude: 27.7172,
-      longitude: 85.3240,
-      distance: 2104.6
+      longitude: 85.3240
     }
   ];
+
+  // Calculate real distances based on user location
+  return dummyAlerts.map(alert => ({
+    ...alert,
+    distance: calculateRealDistance(alert.latitude, alert.longitude)
+  }));
 };
 
 // Fallback: Get dummy disaster news for testing
 const getDummyDisasterNews = () => {
-  return [
+  const userLocation = getStoredLocation();
+  const calculateRealDistance = (lat, lng) => {
+    if (!userLocation || !userLocation.latitude || !userLocation.longitude) {
+      return 1000; // Default large distance if no user location
+    }
+    return calculateDistance(userLocation.latitude, userLocation.longitude, lat, lng);
+  };
+
+  const dummyNews = [
     {
       id: '1',
       title: 'Severe Flooding Affects Coastal Regions',
@@ -248,7 +391,9 @@ const getDummyDisasterNews = () => {
       imageUrl: 'https://via.placeholder.com/400x200?text=Flooding',
       publishedAt: '2023-03-13T08:30:00Z',
       type: 'disaster',
-      category: 'flood'
+      category: 'flood',
+      latitude: 37.7749,
+      longitude: -122.4194
     },
     {
       id: '2',
@@ -260,7 +405,9 @@ const getDummyDisasterNews = () => {
       imageUrl: 'https://via.placeholder.com/400x200?text=Earthquake',
       publishedAt: '2023-03-12T15:45:00Z',
       type: 'disaster',
-      category: 'earthquake'
+      category: 'earthquake',
+      latitude: 37.8044,
+      longitude: -122.2712
     },
     {
       id: '3',
@@ -272,7 +419,9 @@ const getDummyDisasterNews = () => {
       imageUrl: 'https://via.placeholder.com/400x200?text=Wildfire',
       publishedAt: '2023-03-11T19:15:00Z',
       type: 'disaster',
-      category: 'wildfire'
+      category: 'wildfire',
+      latitude: 38.5816,
+      longitude: -121.4944
     },
     {
       id: '4',
@@ -284,7 +433,9 @@ const getDummyDisasterNews = () => {
       imageUrl: 'https://via.placeholder.com/400x200?text=Hurricane',
       publishedAt: '2023-03-10T12:30:00Z',
       type: 'disaster',
-      category: 'hurricane'
+      category: 'hurricane',
+      latitude: 27.9506,
+      longitude: -82.4572
     },
     {
       id: '5',
@@ -296,7 +447,15 @@ const getDummyDisasterNews = () => {
       imageUrl: 'https://via.placeholder.com/400x200?text=Tornado',
       publishedAt: '2023-03-09T16:45:00Z',
       type: 'disaster',
-      category: 'tornado'
+      category: 'tornado',
+      latitude: 41.8781, // Chicago coordinates
+      longitude: -87.6298
     }
   ];
+
+  // Calculate real distances based on user location
+  return dummyNews.map(news => ({
+    ...news,
+    distance: calculateRealDistance(news.latitude, news.longitude)
+  }));
 };

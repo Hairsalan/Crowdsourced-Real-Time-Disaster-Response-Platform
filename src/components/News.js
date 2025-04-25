@@ -1,32 +1,31 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { getDisasterNews } from "../services/NewsService"
-import { getStoredLocation } from "../services/LocationService"
+import { useAuth } from "../AuthContext"
 
 function News() {
   const [news, setNews] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [filter, setFilter] = useState('all')
-  const [location, setLocation] = useState(null)
+  const [radiusMiles, setRadiusMiles] = useState(50)
+  const [customRadius, setCustomRadius] = useState(null)
+  
+  // Get location from context instead of localStorage
+  const { userLocation } = useAuth()
 
-  useEffect(() => {
-    // Load user location
-    const userLocation = getStoredLocation()
-    if (userLocation) {
-      setLocation(userLocation)
-    }
-
-    // Fetch disaster news
-    fetchDisasterNews()
-  }, [])
-
-  const fetchDisasterNews = async () => {
+  // Fetch news with proper memoization
+  const fetchDisasterNews = useCallback(async (radius = null) => {
     setLoading(true)
     setError(null)
     try {
-      const newsData = await getDisasterNews()
+      console.log("Fetching news with radius:", radius || radiusMiles);
+      
+      // Get token for authentication
+      const token = localStorage.getItem('token')
+      // Pass token to the getDisasterNews function
+      const newsData = await getDisasterNews(radius, token)
       setNews(newsData)
     } catch (err) {
       console.error("Error fetching disaster news:", err)
@@ -34,6 +33,30 @@ function News() {
     } finally {
       setLoading(false)
     }
+  }, [radiusMiles]);
+
+  // Load data when userLocation changes
+  useEffect(() => {
+    if (userLocation) {
+      setRadiusMiles(userLocation.radiusMiles || 50)
+      fetchDisasterNews(userLocation.radiusMiles)
+    } else {
+      fetchDisasterNews()
+    }
+  }, [userLocation, fetchDisasterNews])
+
+  // Fetch news when radius changes
+  useEffect(() => {
+    if (customRadius !== null) {
+      fetchDisasterNews(customRadius)
+    }
+  }, [customRadius, fetchDisasterNews])
+
+  // Handle radius change from dropdown
+  const handleRadiusChange = (e) => {
+    const radius = parseInt(e.target.value, 10)
+    console.log("Radius changed to:", radius);
+    setCustomRadius(radius)
   }
 
   // Filter news by disaster type
@@ -51,10 +74,35 @@ function News() {
       <div style={headerStyle}>
         <h1>Disaster News</h1>
         
-        {!location && (
+        {!userLocation && (
           <div style={alertStyle}>
             <p>No location set. For more relevant disaster news, please set your location.</p>
             <a href="/settings" style={buttonStyle}>Set Location</a>
+          </div>
+        )}
+        
+        {userLocation && (
+          <div style={radiusInfoStyle}>
+            <p>
+              Showing disaster news within <strong>{customRadius || radiusMiles} miles</strong> of your location.
+            </p>
+            <div style={radiusDropdownContainerStyle}>
+              <label htmlFor="radius-select">Select radius:</label>
+              <select
+                id="radius-select"
+                value={customRadius || radiusMiles}
+                onChange={handleRadiusChange}
+                style={radiusDropdownStyle}
+              >
+                <option value="1">1 mile</option>
+                <option value="5">5 miles</option>
+                <option value="10">10 miles</option>
+                <option value="25">25 miles</option>
+                <option value="50">50 miles</option>
+                <option value="100">100 miles</option>
+                <option value="200">200 miles</option>
+              </select>
+            </div>
           </div>
         )}
       </div>
@@ -87,7 +135,7 @@ function News() {
           ))}
         </div>
         
-        <button onClick={fetchDisasterNews} style={refreshButtonStyle}>
+        <button onClick={() => fetchDisasterNews(customRadius)} style={refreshButtonStyle}>
           Refresh News
         </button>
       </div>
@@ -95,7 +143,7 @@ function News() {
       {error && (
         <div style={errorStyle}>
           <p>{error}</p>
-          <button onClick={fetchDisasterNews} style={buttonStyle}>Retry</button>
+          <button onClick={() => fetchDisasterNews(customRadius)} style={buttonStyle}>Retry</button>
         </div>
       )}
       
@@ -105,10 +153,15 @@ function News() {
         </div>
       ) : filteredNews.length === 0 ? (
         <div style={emptyStyle}>
-          <p>No disaster news found for this filter.</p>
+          <p>No disaster news found for this filter within {customRadius || radiusMiles} miles of your location.</p>
           {filter !== 'all' && (
             <button onClick={() => setFilter('all')} style={buttonStyle}>
-              Show All News
+              Show All News Types
+            </button>
+          )}
+          {userLocation && (
+            <button onClick={() => setCustomRadius(200)} style={{...buttonStyle, marginLeft: '10px'}}>
+              Expand to 200 Miles
             </button>
           )}
         </div>
@@ -138,6 +191,11 @@ function News() {
                   )}
                   <span style={sourceStyle}>Source: {item.source}</span>
                   <span style={dateStyle}>{formatDate(item.publishedAt)}</span>
+                  {item.distance !== undefined && (
+                    <span style={distanceStyle}>
+                      {Math.round(item.distance)} miles away
+                    </span>
+                  )}
                 </div>
                 {item.url && (
                   <a 
@@ -233,6 +291,27 @@ const alertStyle = {
   alignItems: 'center',
   flexWrap: 'wrap',
   gap: '10px',
+};
+
+const radiusInfoStyle = {
+  backgroundColor: '#e9f7fe',
+  padding: '10px 15px',
+  borderRadius: '5px',
+  marginTop: '10px',
+};
+
+const radiusDropdownContainerStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '10px',
+  marginTop: '5px',
+};
+
+const radiusDropdownStyle = {
+  padding: '5px 10px',
+  borderRadius: '4px',
+  border: '1px solid #ccc',
+  fontSize: '14px',
 };
 
 const buttonStyle = {
@@ -379,6 +458,12 @@ const dateStyle = {
   color: '#6c757d',
 };
 
+const distanceStyle = {
+  fontSize: '13px', 
+  fontWeight: 'bold',
+  color: '#007bff',
+};
+
 const readMoreStyle = {
   alignSelf: 'flex-start',
   padding: '5px 12px',
@@ -390,4 +475,4 @@ const readMoreStyle = {
   marginTop: 'auto',
 };
 
-export default News;
+export default News

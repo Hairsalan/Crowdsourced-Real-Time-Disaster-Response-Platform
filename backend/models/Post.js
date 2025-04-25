@@ -16,8 +16,15 @@ const PostSchema = new Schema({
     required: true
   },
   location: {
-    latitude: Number,
-    longitude: Number,
+    type: {
+      type: String,
+      enum: ['Point'],
+      default: 'Point'
+    },
+    coordinates: {
+      type: [Number], // [longitude, latitude]
+      default: undefined
+    },
     displayName: String
   },
   author: {
@@ -51,5 +58,8 @@ const PostSchema = new Schema({
     }
   }]
 });
+
+// Add 2dsphere index for geospatial queries
+PostSchema.index({ "location": "2dsphere" });
 
 module.exports = mongoose.model('Post', PostSchema);

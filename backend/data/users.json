@@ -4,6 +4,11 @@
     "username": "Arsalan2",
     "email": "TestingEmailSJSU11@test.com",
     "password": "$2a$10$lJL.y4zwtoBEvf2obA9HgOmp6xD56WFegQTueThHPWocdQHxgkKGm",
+    "location": {
+      "type": "Point",
+      "coordinates": [-122.0076, 37.3541]
+    },
+    "radiusMiles": 50,
     "dateJoined": "2025-02-28T02:41:06.816Z"
   },
   {
@@ -11,6 +16,11 @@
     "username": "Arsalan3",
     "email": "TestingEmailSJSU12@test.com",
     "password": "$2a$10$i75w7qTlPO04/CuGb.z4Wuyt204VadDT5aqwYyjXX5RRTE/e/x0em",
+    "location": {
+      "type": "Point",
+      "coordinates": [-122.0076, 37.3541]
+    },
+    "radiusMiles": 50,
     "dateJoined": "2025-02-28T02:45:07.876Z"
   }
 ]

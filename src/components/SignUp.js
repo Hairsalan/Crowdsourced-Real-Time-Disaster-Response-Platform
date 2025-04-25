@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useNavigate, Link } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
+import { useAuth } from "../AuthContext"
 
 function SignUp() {
   const [formData, setFormData] = useState({
@@ -13,12 +14,14 @@ function SignUp() {
   })
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const { login } = useAuth()
   const navigate = useNavigate()
 
   // Clear any existing auth data when the signup page loads
   useEffect(() => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    localStorage.removeItem('userLocation'); // So the form starts blank
     console.log("Auth data cleared on signup page load");
   }, []);
 
@@ -59,12 +62,16 @@ function SignUp() {
         throw new Error(data.message || 'Registration failed')
       }
 
-      // Store token and user info in localStorage
-      localStorage.setItem('token', data.token)
-      localStorage.setItem('user', JSON.stringify(data.user))
+      console.log("Signup successful, got token:", !!data.token);
+      
+      // Use AuthContext login function instead of manually setting localStorage
+      // Wait for login to complete since it's now an async function
+      await login(data.user, data.token);
+      
+      console.log("Login completed, token in storage:", !!localStorage.getItem('token'));
 
-      // Redirect to dashboard
-      window.location.href = '/dashboard';
+      // Redirect directly to settings instead of dashboard
+      navigate("/settings", { replace: true });
     } catch (error) {
       setError(error.message)
     } finally {

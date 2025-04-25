@@ -1,9 +1,13 @@
 [
   {
     "id": "1740710677886",
-    "title": "d",
-    "location": "d",
-    "description": "d",
+    "title": "Fire in Milpitas Public Library",
+    "location": {
+      "type": "Point",
+      "coordinates": [-121.9055, 37.4306],
+      "displayName": "160, North Main Street, Milpitas, Santa Clara County, California, 95035, United States"
+    },
+    "description": "Small fire reported in the electrical room. Building evacuated as a precaution.",
     "type": "fire",
     "author": "Arsalan2",
     "authorId": "1740710466816",
@@ -14,10 +18,14 @@
   },
   {
     "id": "1740710716289",
-    "title": "d",
-    "location": "d",
-    "description": "d",
-    "type": "other",
+    "title": "Flooding at Mission College",
+    "location": {
+      "type": "Point",
+      "coordinates": [-121.9910, 37.3895],
+      "displayName": "3000, Mission College Boulevard, Santa Clara, Santa Clara County, California, 95054, United States"
+    },
+    "description": "Water main break causing flooding in the Student Engagement Center",
+    "type": "flood",
     "author": "Arsalan3",
     "authorId": "1740710707876",
     "createdAt": "2025-02-28T02:45:16.289Z",
@@ -27,9 +35,13 @@
   },
   {
     "id": "1740710726419",
-    "title": "d",
-    "location": "d",
-    "description": "d",
+    "title": "Minor Tremors Felt in Santa Clara",
+    "location": {
+      "type": "Point", 
+      "coordinates": [-122.0076, 37.3541],
+      "displayName": "Santa Clara, Santa Clara County, California, United States"
+    },
+    "description": "Several reports of minor tremors in the Santa Clara area. No damage reported.",
     "type": "earthquake",
     "author": "Arsalan3",
     "authorId": "1740710707876",
@@ -40,9 +52,13 @@
   },
   {
     "id": "1740714303909",
-    "title": "s",
-    "location": "s",
-    "description": "s",
+    "title": "Brush Fire Near Great America",
+    "location": {
+      "type": "Point",
+      "coordinates": [-121.9746, 37.3996],
+      "displayName": "4701 Great America Parkway, Santa Clara, California, 95054, United States"
+    },
+    "description": "Small brush fire reported near the parking lot. Fire department responding.",
     "type": "fire",
     "author": "Arsalan2",
     "authorId": "1740710466816",
