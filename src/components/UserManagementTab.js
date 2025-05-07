@@ -12,6 +12,8 @@ function UserManagementTab({ userRole }) {
   const [banDuration, setBanDuration] = useState('1d');
   const [selectedUser, setSelectedUser] = useState(null);
   const [showBanPrompt, setShowBanPrompt] = useState(false);
+  const [showRolePrompt, setShowRolePrompt] = useState(false);
+  const [selectedRole, setSelectedRole] = useState('');
   const usersPerPage = 10;
   const { logout, refreshToken } = useAuth();
 
@@ -77,6 +79,21 @@ function UserManagementTab({ userRole }) {
 
   const closeBanPrompt = () => {
     setShowBanPrompt(false);
+    setSelectedUser(null);
+  };
+
+  const openRolePrompt = (user) => {
+    console.log('Opening role prompt for user:', user.username);
+    console.log('Current user role:', user.role);
+    console.log('Current operator role (you):', userRole);
+    
+    setSelectedUser(user);
+    setSelectedRole(user.role);
+    setShowRolePrompt(true);
+  };
+
+  const closeRolePrompt = () => {
+    setShowRolePrompt(false);
     setSelectedUser(null);
   };
 
@@ -222,6 +239,81 @@ function UserManagementTab({ userRole }) {
     }
   };
 
+  const handleChangeUserRole = async () => {
+    try {
+      if (selectedRole === selectedUser.role) {
+        alert('Please select a different role');
+        return;
+      }
+      
+      // Add role change validation for moderators
+      if (isModerator) {
+        // Moderators can now: 1) change users to NGO, or 2) change NGOs back to users
+        const isValidModeratorChange = 
+          (selectedUser.role === 'user' && selectedRole === 'ngo') || // user -> NGO
+          (selectedUser.role === 'ngo' && selectedRole === 'user');   // NGO -> user
+          
+        if (!isValidModeratorChange) {
+          alert('As a moderator, you can only promote users to NGO status or demote NGOs to regular users');
+          return;
+        }
+      }
+      
+      // Try to refresh token first
+      const isTokenValid = await refreshToken();
+      if (!isTokenValid) {
+        setError("Your session has expired. Please log in again.");
+        return;
+      }
+      
+      const token = localStorage.getItem('token');
+      
+      if (!token) {
+        setError("No authentication token found. Please log in again.");
+        logout();
+        return;
+      }
+      
+      console.log('Making role change request for user:', selectedUser._id);
+      console.log('New role:', selectedRole);
+      console.log('Current user role:', userRole);
+      
+      const response = await fetch(`http://localhost:5000/api/users/${selectedUser._id}/role`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ newRole: selectedRole })
+      });
+      
+      // Get response data even if response is not ok
+      const data = await response.json();
+      
+      if (response.status === 403 || response.status === 401) {
+        console.error('Auth error during role change:', data);
+        setError(data.message || "Your session has expired. Please log in again.");
+        // Don't perform automatic logout here, just show the error
+        closeRolePrompt();
+        return;
+      }
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to change user role');
+      }
+      
+      // Update the user in the list
+      setUsers(users.map(user => 
+        user._id === selectedUser._id ? { ...user, role: selectedRole } : user
+      ));
+      closeRolePrompt();
+      alert(`User role has been changed to ${selectedRole} successfully`);
+    } catch (error) {
+      console.error('Role change error:', error);
+      alert(`Error: ${error.message}`);
+    }
+  };
+
   if (loading) {
     return <div style={loadingStyle}>Loading users...</div>;
   }
@@ -278,6 +370,15 @@ function UserManagementTab({ userRole }) {
                       <div style={actionButtonsStyle}>
                         {!user.banned ? (
                           <>
+                            {(isAdmin || (isModerator && (user.role === 'user' || user.role === 'ngo'))) && (
+                              <button 
+                                onClick={() => openRolePrompt(user)} 
+                                style={roleButtonStyle}
+                              >
+                                Change Role
+                              </button>
+                            )}
+                            
                             {(user.role !== 'admin' && (isAdmin || (isModerator && user.role !== 'moderator'))) && (
                               <button 
                                 onClick={() => openBanPrompt(user)} 
@@ -352,6 +453,37 @@ function UserManagementTab({ userRole }) {
             <div style={modalButtonsStyle}>
               <button onClick={closeBanPrompt} style={cancelButtonStyle}>Cancel</button>
               <button onClick={handleBanUser} style={confirmBanButtonStyle}>Ban User</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Change User Role Modal */}
+      {showRolePrompt && (
+        <div style={modalOverlayStyle}>
+          <div style={modalContentStyle}>
+            <h3 style={modalHeaderStyle}>Change Role: {selectedUser.username}</h3>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Select New Role:</label>
+              <select 
+                value={selectedRole} 
+                onChange={(e) => setSelectedRole(e.target.value)}
+                style={selectStyle}
+              >
+                <option value="user">Regular User</option>
+                <option value="ngo">NGO/Organization</option>
+                {/* Only admins can promote to moderator or admin */}
+                {isAdmin && (
+                  <>
+                    <option value="moderator">Moderator</option>
+                    <option value="admin">Administrator</option>
+                  </>
+                )}
+              </select>
+            </div>
+            <div style={modalButtonsStyle}>
+              <button onClick={closeRolePrompt} style={cancelButtonStyle}>Cancel</button>
+              <button onClick={handleChangeUserRole} style={confirmRoleButtonStyle}>Change Role</button>
             </div>
           </div>
         </div>
@@ -559,6 +691,18 @@ const loginButtonStyle = {
   backgroundColor: "#28a745",
   color: "white",
   padding: "8px 16px",
+};
+
+const roleButtonStyle = {
+  ...buttonBaseStyle,
+  backgroundColor: "#17a2b8",
+  color: "white",
+};
+
+const confirmRoleButtonStyle = {
+  ...buttonBaseStyle,
+  backgroundColor: "#17a2b8",
+  color: "white",
 };
 
 export default UserManagementTab; 

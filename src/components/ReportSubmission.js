@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { getStoredLocation, geocodeAddress } from "../services/LocationService"
+import { useAuth } from "../AuthContext"
 
 function ReportSubmission() {
   const [formData, setFormData] = useState({
@@ -22,21 +23,24 @@ function ReportSubmission() {
   const [loading, setLoading] = useState(false)
   const [geocoding, setGeocoding] = useState(false)
   const [locationDetail, setLocationDetail] = useState("")
+  const [reportImage, setReportImage] = useState(null)
+  const [imagePreview, setImagePreview] = useState(null)
   const navigate = useNavigate()
+  const { isAuthenticated, token, userLocation, hasLocation } = useAuth()
 
   // Check if user is authenticated on component mount
   useEffect(() => {
-    if (!localStorage.getItem('token')) {
+    if (!isAuthenticated || !token) {
       navigate('/login')
+      return
     }
     
-    // Load user's stored location
-    const userLocation = getStoredLocation()
-    if (userLocation) {
+    // Load user's stored location from AuthContext
+    if (userLocation && hasLocation) {
       setCurrentLocation(userLocation)
       if (userLocation.displayName) {
         setLocationDetail(userLocation.displayName)
-      } else {
+      } else if (typeof userLocation.latitude === 'number' && typeof userLocation.longitude === 'number') {
         setLocationDetail(`Latitude: ${userLocation.latitude.toFixed(6)}, Longitude: ${userLocation.longitude.toFixed(6)}`)
       }
     } else {
@@ -47,7 +51,7 @@ function ReportSubmission() {
         useCurrentLocation: false
       })
     }
-  }, [navigate])
+  }, [navigate, isAuthenticated, token, userLocation, hasLocation])
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target
@@ -67,6 +71,41 @@ function ReportSubmission() {
     })
   }
 
+  // Handle image selection
+  const handleImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Check file size (limit to 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        setError("Image file is too large. Maximum size is 5MB.");
+        return;
+      }
+      
+      // Check file type
+      if (!file.type.startsWith('image/')) {
+        setError("Only image files are allowed.");
+        return;
+      }
+      
+      setReportImage(file);
+      
+      // Create a preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result);
+      };
+      reader.readAsDataURL(file);
+      
+      setError("");
+    }
+  };
+
+  // Remove selected image
+  const removeImage = () => {
+    setReportImage(null);
+    setImagePreview(null);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
@@ -80,6 +119,11 @@ function ReportSubmission() {
       }
       if (!formData.description.trim()) {
         throw new Error("Description is required")
+      }
+      
+      // Check if user is authenticated
+      if (!isAuthenticated || !token) {
+        throw new Error("You must be logged in to submit a report")
       }
       
       // Determine location data to send
@@ -120,33 +164,40 @@ function ReportSubmission() {
           setGeocoding(false)
         } catch (geocodeError) {
           setGeocoding(false)
-          throw new Error(`Could not geocode address: ${geocodeError.message}`)
+          // Provide a more user-friendly error message
+          console.error("Geocoding error details:", geocodeError);
+          if (geocodeError.message.includes("Could not find coordinates")) {
+            throw new Error(`Could not find this location. Please try entering a more specific address with city, state and country.`);
+          } else {
+            throw new Error(`Location error: ${geocodeError.message}. Please try again or use a different address format.`);
+          }
         }
       } else {
         // No location provided
         locationData = null
       }
 
-      const token = localStorage.getItem('token')
+      // Use FormData for submitting with images
+      const formDataToSend = new FormData();
+      formDataToSend.append('title', formData.title);
+      formDataToSend.append('description', formData.description);
+      formDataToSend.append('type', formData.type);
       
-      if (!token) {
-        throw new Error("You must be logged in to submit a report")
+      if (locationData) {
+        formDataToSend.append('location', JSON.stringify(locationData));
       }
-
-      const reportData = {
-        title: formData.title,
-        description: formData.description,
-        type: formData.type,
-        location: locationData
+      
+      if (reportImage) {
+        formDataToSend.append('image', reportImage);
       }
 
       const response = await fetch('http://localhost:5000/api/posts', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Authorization': `Bearer ${token}`
+          // Don't set Content-Type when using FormData, browser will set it automatically with boundary
         },
-        body: JSON.stringify(reportData)
+        body: formDataToSend
       })
 
       const data = await response.json()
@@ -169,6 +220,8 @@ function ReportSubmission() {
         country: "",
         useCurrentLocation: !!currentLocation
       })
+      setReportImage(null);
+      setImagePreview(null);
       
       // Redirect to posts page after 2 seconds
       setTimeout(() => {
@@ -180,6 +233,14 @@ function ReportSubmission() {
       setLoading(false)
     }
   }
+
+  const previewContainerStyle = {
+    border: "1px solid #ddd",
+    borderRadius: "4px",
+    padding: "10px",
+    backgroundColor: "#f9f9f9",
+    marginBottom: "10px"
+  };
 
   return (
     <div style={{ maxWidth: "600px", margin: "0 auto" }}>
@@ -347,6 +408,68 @@ function ReportSubmission() {
               </div>
             )}
           </div>
+        </div>
+        
+        <div style={{ marginBottom: "15px" }}>
+          <label style={{ display: "block", marginBottom: "5px", fontWeight: "bold" }}>Image (Optional):</label>
+          
+          {imagePreview ? (
+            <div style={previewContainerStyle}>
+              <img 
+                src={imagePreview} 
+                alt="Report preview" 
+                style={{
+                  maxWidth: "100%",
+                  maxHeight: "200px",
+                  display: "block",
+                  marginBottom: "10px",
+                  borderRadius: "4px"
+                }} 
+              />
+              <button
+                type="button"
+                onClick={removeImage}
+                style={{
+                  padding: "8px 12px",
+                  backgroundColor: "#dc3545",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  marginTop: "5px"
+                }}
+              >
+                Remove Image
+              </button>
+            </div>
+          ) : (
+            <div>
+              <label 
+                htmlFor="report-image" 
+                style={{
+                  display: "inline-block",
+                  padding: "10px 15px",
+                  backgroundColor: "#f0f0f0",
+                  border: "1px solid #ddd",
+                  borderRadius: "4px",
+                  cursor: "pointer"
+                }}
+              >
+                <span style={{ marginRight: "8px" }}>📷</span> 
+                Select Image
+              </label>
+              <input
+                id="report-image"
+                type="file"
+                accept="image/*"
+                onChange={handleImageChange}
+                style={{ display: "none" }}
+              />
+              <p style={{ color: "#666", fontSize: "0.9em", marginTop: "5px" }}>
+                Add an image of the disaster or event (max 5MB)
+              </p>
+            </div>
+          )}
         </div>
         
         <button 

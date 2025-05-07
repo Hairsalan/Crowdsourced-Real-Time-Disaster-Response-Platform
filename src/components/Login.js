@@ -85,101 +85,66 @@ function Login() {
   }
 
   return (
-    <div style={{ maxWidth: "400px", margin: "0 auto" }}>
-      <h1 style={{ textAlign: "center", color: "#333", marginBottom: "25px" }}>Login</h1>
+    <div>
+      <h2 className="text-center mb-4">Sign in to your account</h2>
       
       {error && (
-        <div style={{ 
-          color: "white", 
-          backgroundColor: "#d9534f", 
-          padding: "10px", 
-          borderRadius: "5px", 
-          marginBottom: "15px",
-          textAlign: "center"
-        }}>
+        <div className="alert alert-danger">
           {error}
         </div>
       )}
       
       {success && (
-        <div style={{ 
-          color: "white", 
-          backgroundColor: "#5cb85c", 
-          padding: "10px", 
-          borderRadius: "5px", 
-          marginBottom: "15px",
-          textAlign: "center"
-        }}>
+        <div className="alert alert-success">
           {success}
         </div>
       )}
       
       <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: "15px" }}>
-          <label htmlFor="email" style={{ display: "block", marginBottom: "5px", fontWeight: "500" }}>Email:</label>
+        <div className="mb-3">
+          <label htmlFor="email">Email</label>
           <input 
             type="email" 
             id="email" 
             name="email" 
             value={formData.email}
             onChange={handleChange}
-            style={{ 
-              width: "100%", 
-              padding: "10px", 
-              borderRadius: "4px", 
-              border: "1px solid #ddd",
-              fontSize: "16px"
-            }}
             required 
             autoComplete="email"
+            className="mb-3"
           />
         </div>
-        <div style={{ marginBottom: "20px" }}>
-          <label htmlFor="password" style={{ display: "block", marginBottom: "5px", fontWeight: "500" }}>Password:</label>
+        <div className="mb-4">
+          <label htmlFor="password">Password</label>
           <input 
             type="password" 
             id="password" 
             name="password" 
             value={formData.password}
             onChange={handleChange}
-            style={{ 
-              width: "100%", 
-              padding: "10px", 
-              borderRadius: "4px", 
-              border: "1px solid #ddd",
-              fontSize: "16px"
-            }} 
             required 
             autoComplete="current-password"
+            className="mb-1"
           />
         </div>
         <button 
           type="submit" 
           disabled={loading}
+          className="btn w-full"
           style={{ 
-            width: "100%", 
-            padding: "12px", 
-            backgroundColor: "#007bff", 
-            color: "white", 
-            border: "none", 
-            borderRadius: "4px", 
-            cursor: loading ? "not-allowed" : "pointer",
-            opacity: loading ? 0.7 : 1,
-            fontSize: "16px",
-            fontWeight: "bold"
+            backgroundColor: 'var(--primary)',
+            color: 'var(--white)',
+            padding: 'var(--spacing-md)',
+            fontSize: '1rem'
           }}
         >
-          {loading ? "Logging in..." : "Login"}
+          {loading ? "Signing in..." : "Sign in"}
         </button>
       </form>
       
-      <p style={{ textAlign: "center", marginTop: "20px" }}>
-        Don't have an account? <Link to="/signup" style={{ color: "#007bff", textDecoration: "none", fontWeight: "bold" }}>Sign up</Link>
+      <p className="text-center mt-4">
+        Don't have an account? <Link to="/signup">Sign up</Link>
       </p>
-      
-      <div style={{ marginTop: "20px", fontSize: "12px", color: "#777" }}>
-        <p style={{ textAlign: "center" }}>Auth Status: {localStorage.getItem('token') ? 'Logged In' : 'Not Logged In'}</p>
-      </div>
     </div>
   )
 }

@@ -2,160 +2,199 @@
 
 import { getStoredLocation, calculateDistance } from './LocationService';
 
-// GDACS API for global disaster alerts
-const GDACS_API_URL = 'https://www.gdacs.org/xml/rss.xml';
+// NWS API endpoint for active alerts
+const NWS_API_URL = 'https://api.weather.gov/alerts/active';
 
-// News API for news articles (you would need an API key)
-// Free alternative: https://newsapi.org/ 
-const NEWS_API_KEY = 'YOUR_API_KEY'; // Replace with your actual API key
-const NEWS_API_URL = `https://newsapi.org/v2/everything?apiKey=${NEWS_API_KEY}`;
+// USGS Earthquake API endpoints
+const USGS_API_URL_DAY = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson';
+const USGS_API_URL_WEEK = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson';
 
-// Disaster keywords for searching news
-const DISASTER_KEYWORDS = [
-  'earthquake', 'flood', 'hurricane', 'tornado', 'tsunami', 
-  'wildfire', 'drought', 'landslide', 'volcano', 'cyclone', 
-  'typhoon', 'disaster', 'emergency', 'evacuation'
-];
-
-// Get disaster alerts from GDACS (Global Disaster Alert and Coordination System)
+// Get disaster alerts by combining data from NWS and USGS APIs
 export const getDisasterAlerts = async (customRadius = null, token = null) => {
   try {
-    // For development, return dummy data instead of making API calls
-    // In production, you would uncomment the API call below
-    /*
-    // Use a CORS proxy if needed
-    const corsProxy = 'https://cors-anywhere.herokuapp.com/';
-    const response = await fetch(corsProxy + GDACS_API_URL);
+    // Get alerts from both APIs
+    const [weatherAlerts, earthquakeAlerts] = await Promise.all([
+      fetchNWSAlerts(),
+      fetchUSGSEarthquakes()
+    ]);
     
-    if (!response.ok) {
-      throw new Error('Failed to fetch disaster alerts');
-    }
-    
-    const text = await response.text();
-    // Parse XML response
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(text, 'text/xml');
-    
-    // Extract disaster information from XML
-    const items = xmlDoc.querySelectorAll('item');
-    const allAlerts = Array.from(items).map(item => {
-      // Extract coordinates from GeoRSS point
-      const point = item.getElementsByTagNameNS('http://www.georss.org/georss', 'point')[0]?.textContent;
-      let latitude = null;
-      let longitude = null;
-      
-      if (point) {
-        const coords = point.split(' ');
-        latitude = parseFloat(coords[0]);
-        longitude = parseFloat(coords[1]);
-      }
-      
-      return {
-        id: item.querySelector('guid')?.textContent,
-        title: item.querySelector('title')?.textContent,
-        description: item.querySelector('description')?.textContent,
-        link: item.querySelector('link')?.textContent,
-        publicationDate: new Date(item.querySelector('pubDate')?.textContent).toISOString(),
-        category: item.querySelector('category')?.textContent || 'Unknown',
-        latitude,
-        longitude,
-        // Calculate distance if user location is available
-        distance: calculateDistanceToUser(latitude, longitude)
-      };
-    });
+    // Combine all alerts
+    const allAlerts = [...weatherAlerts, ...earthquakeAlerts];
     
     // Filter alerts by user radius
-    const alerts = filterAlertsByRadius(allAlerts, customRadius, token);
+    const filteredAlerts = filterAlertsByRadius(allAlerts, customRadius, token);
     
-    return alerts;
-    */
-    
-    // Return dummy data for development
-    const allAlerts = getDummyDisasterAlerts();
-    
-    // Filter alerts by user radius
-    const alerts = filterAlertsByRadius(allAlerts, customRadius, token);
-    
-    return alerts;
+    return filteredAlerts;
   } catch (error) {
     console.error('Error fetching disaster alerts:', error);
-    // Return dummy data as fallback
-    const allAlerts = getDummyDisasterAlerts();
-    const alerts = filterAlertsByRadius(allAlerts, customRadius, token);
-    return alerts;
+    return [];
   }
 };
 
-// Fetch news about disasters (requires News API key)
+// Fetch news about disasters (combines NWS and USGS data)
 export const getDisasterNews = async (customRadius = null, token = null) => {
+  console.log("getDisasterNews called with radius:", customRadius);
+  
   try {
-    // Get user's location from the context or localStorage
+    // This now just calls getDisasterAlerts as we're using the same data sources
+    const alerts = await getDisasterAlerts(customRadius, token);
+    console.log("Disaster alerts fetched:", alerts.length);
+    
+    return alerts;
+  } catch (error) {
+    console.error('Error fetching disaster news:', error);
+    return [];
+  }
+};
+
+// Fetch alerts from National Weather Service API
+const fetchNWSAlerts = async () => {
+  try {
     const userLocation = getStoredLocation();
+    let url = `${NWS_API_URL}`;
     
-    // For development, return dummy data instead of making API calls
-    // In production, you would uncomment the API call below
-    /*
-    // Create a query with disaster keywords
-    const keywords = DISASTER_KEYWORDS.join(' OR ');
+    // If we have user location, we could filter by area in a future enhancement
+    // For now, we'll fetch all active alerts and filter by distance later
     
-    // Include location in query if available
-    let url = `${NEWS_API_URL}&q=${keywords}&sortBy=publishedAt&language=en`;
-    
-    if (userLocation?.displayName) {
-      // Extract relevant location information
-      const locationTerms = extractLocationTerms(userLocation.displayName);
-      if (locationTerms) {
-        url += `&q=${keywords} AND ${locationTerms}`;
+    const response = await fetch(url, {
+      headers: {
+        'Accept': 'application/geo+json',
+        'User-Agent': '(DisasterResponseApp, contact@example.com)'
       }
-    }
-    
-    // Add authorization if token exists
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    
-    const response = await fetch(url, { headers });
+    });
     
     if (!response.ok) {
-      throw new Error('Failed to fetch news');
+      throw new Error(`Failed to fetch NWS alerts: ${response.status}`);
     }
     
     const data = await response.json();
     
-    // Process news articles
-    const allNews = data.articles.map(article => ({
-      id: article.url,
-      title: article.title,
-      description: article.description,
-      content: article.content,
-      source: article.source.name,
-      url: article.url,
-      imageUrl: article.urlToImage,
-      publishedAt: article.publishedAt,
-      type: 'news'
-    }));
-    
-    // Filter news by user radius
-    const filteredNews = filterNewsByRadius(allNews, customRadius, token);
-    
-    return filteredNews;
-    */
-    
-    // Return dummy data for development
-    const allNews = getDummyDisasterNews();
-    
-    // Filter news by user radius
-    const filteredNews = filterNewsByRadius(allNews, customRadius, token);
-    
-    return filteredNews;
+    // Parse NWS alerts into our standard format
+    return data.features.map(feature => {
+      const properties = feature.properties;
+      const geometry = feature.geometry;
+      
+      // Extract coordinates from geometry if available
+      let latitude = null;
+      let longitude = null;
+      
+      if (geometry && geometry.type === 'Point') {
+        // For Point, coordinates are [longitude, latitude]
+        longitude = geometry.coordinates[0];
+        latitude = geometry.coordinates[1];
+      } else if (geometry && geometry.type === 'Polygon') {
+        // For Polygon, use the center point of the first ring
+        // This is a simplification - could be improved in a future version
+        const coordinates = geometry.coordinates[0];
+        let latSum = 0;
+        let lonSum = 0;
+        
+        coordinates.forEach(coord => {
+          lonSum += coord[0];
+          latSum += coord[1];
+        });
+        
+        longitude = lonSum / coordinates.length;
+        latitude = latSum / coordinates.length;
+      }
+      
+      // Calculate distance if coordinates are available
+      const distance = calculateDistanceToUser(latitude, longitude);
+      
+      return {
+        id: properties.id,
+        title: properties.headline || properties.event,
+        description: properties.description,
+        link: properties.url,
+        publicationDate: properties.sent,
+        category: properties.event,
+        severity: properties.severity,
+        certainty: properties.certainty,
+        urgency: properties.urgency,
+        source: 'National Weather Service',
+        latitude,
+        longitude,
+        distance
+      };
+    });
   } catch (error) {
-    console.error('Error fetching disaster news:', error);
+    console.error('Error fetching NWS alerts:', error);
+    return [];
+  }
+};
+
+// Fetch earthquake data from USGS API
+const fetchUSGSEarthquakes = async () => {
+  try {
+    // Use the past day endpoint by default
+    const response = await fetch(USGS_API_URL_DAY);
     
-    // Return dummy data if API fails or is not set up
-    const allNews = getDummyDisasterNews();
-    const filteredNews = filterNewsByRadius(allNews, customRadius, token);
-    return filteredNews;
+    if (!response.ok) {
+      throw new Error(`Failed to fetch USGS earthquakes: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    // Parse USGS data into our standard format and filter out micro earthquakes
+    return data.features
+      .filter(feature => feature.properties.mag >= 2.5) // Filter out micro earthquakes
+      .map(feature => {
+        const properties = feature.properties;
+        const geometry = feature.geometry;
+        
+        // Get coordinates (USGS GeoJSON uses [longitude, latitude, depth])
+        const longitude = geometry.coordinates[0];
+        const latitude = geometry.coordinates[1];
+        const depth = geometry.coordinates[2];
+        
+        // Calculate magnitude category
+        let category = 'Earthquake';
+        if (properties.mag >= 7) {
+          category = 'Major Earthquake';
+        } else if (properties.mag >= 5) {
+          category = 'Moderate Earthquake';
+        } else if (properties.mag >= 2.5) {
+          category = 'Minor Earthquake';
+        }
+        
+        // Calculate severity based on magnitude
+        let severity = 'Unknown';
+        if (properties.mag >= 7) {
+          severity = 'Extreme';
+        } else if (properties.mag >= 5) {
+          severity = 'Severe';
+        } else if (properties.mag >= 3) {
+          severity = 'Moderate';
+        } else {
+          severity = 'Minor';
+        }
+        
+        // Calculate distance if coordinates are available
+        const distance = calculateDistanceToUser(latitude, longitude);
+        
+        // Format description with magnitude and depth
+        const description = `Magnitude ${properties.mag} earthquake at a depth of ${depth.toFixed(1)} km. ${properties.place}.`;
+        
+        return {
+          id: properties.ids || feature.id,
+          title: `M${properties.mag.toFixed(1)} - ${properties.place}`,
+          description,
+          link: properties.url,
+          publicationDate: new Date(properties.time).toISOString(),
+          category,
+          severity,
+          source: 'USGS Earthquake Hazards Program',
+          latitude,
+          longitude,
+          depth,
+          magnitude: properties.mag,
+          distance,
+          imageUrl: null
+        };
+      });
+  } catch (error) {
+    console.error('Error fetching USGS earthquakes:', error);
+    return [];
   }
 };
 
@@ -171,7 +210,7 @@ const filterAlertsByRadius = (alerts, customRadius = null, token = null) => {
   // Get user's preferred radius (use custom radius if provided)
   const radiusMiles = customRadius !== null ? customRadius : (userLocation.radiusMiles || 50);
   
-  console.log(`Filtering alerts within ${radiusMiles} miles of user location [${userLocation.latitude}, ${userLocation.longitude}]`);
+  console.log(`Filtering ${alerts.length} alerts within ${radiusMiles} miles of user location [${userLocation.latitude}, ${userLocation.longitude}]`);
   
   // Filter alerts within the radius
   const filteredAlerts = alerts.filter(alert => {
@@ -185,7 +224,6 @@ const filterAlertsByRadius = (alerts, customRadius = null, token = null) => {
     const alertLng = parseFloat(alert.longitude);
     
     if (isNaN(alertLat) || isNaN(alertLng)) {
-      console.warn("Invalid coordinates for alert:", alert.title);
       return false;
     }
     
@@ -207,7 +245,8 @@ const filterAlertsByRadius = (alerts, customRadius = null, token = null) => {
     // Add distance to alert object
     alert.distance = distanceMiles;
     
-    console.log(`Alert "${alert.title}" at [${alertLat}, ${alertLng}] is ${distanceMiles.toFixed(2)} miles from user location`);
+    // Add a type property to help with filtering in the Map component
+    alert.type = 'news';
     
     // Include if within radius
     return distanceMiles <= radiusMiles;
@@ -216,63 +255,6 @@ const filterAlertsByRadius = (alerts, customRadius = null, token = null) => {
   console.log(`Filtered ${alerts.length} alerts down to ${filteredAlerts.length} within ${radiusMiles} miles`);
   
   return filteredAlerts;
-};
-
-// Filter news by user's radius (based on keywords/location terms for API results)
-const filterNewsByRadius = (news, customRadius = null, token = null) => {
-  // Get user's location from localStorage
-  const userLocation = getStoredLocation();
-  
-  // If no user location, return all news
-  if (!userLocation || !userLocation.latitude || !userLocation.longitude) {
-    return news;
-  }
-  
-  // If there's a valid token, use server-side filtering
-  if (token) {
-    // In production, you would make a call to the server for filtering
-    // For now, just use client-side filtering
-  }
-  
-  // Get user's preferred radius (use custom radius if provided)
-  const radiusMiles = customRadius !== null ? customRadius : (userLocation.radiusMiles || 50);
-  
-  console.log(`Filtering news within ${radiusMiles} miles of user location`);
-  
-  // Filter news by their distance property
-  // We now calculate actual distances for each item using the Haversine formula
-  // based on the user's current location and the item's coordinates
-  const filteredNews = news.filter(item => {
-    // Ensure item has a distance value
-    if (typeof item.distance === 'undefined') {
-      console.warn(`News item "${item.title}" missing distance information`);
-      return false;
-    }
-    
-    console.log(`News item "${item.title}" is ${item.distance.toFixed(1)} miles from user location (radius: ${radiusMiles})`);
-    return item.distance <= radiusMiles;
-  });
-  
-  console.log(`Filtered ${news.length} news items down to ${filteredNews.length} within ${radiusMiles} miles`);
-  
-  return filteredNews;
-};
-
-// Extract relevant location terms for better news filtering
-const extractLocationTerms = (displayName) => {
-  if (!displayName) return null;
-  
-  // Extract city, state, country, etc.
-  const parts = displayName.split(',').map(part => part.trim());
-  
-  // Filter out postal codes and very short terms
-  const relevantParts = parts.filter(part => {
-    const isPostalCode = /^\d+$/.test(part);
-    return !isPostalCode && part.length > 2;
-  });
-  
-  // Return most specific terms (city, county, etc.)
-  return relevantParts.slice(0, 2).join(' OR ');
 };
 
 // Calculate distance between disaster and user location
@@ -288,174 +270,4 @@ const calculateDistanceToUser = (latitude, longitude) => {
     latitude, 
     longitude
   );
-};
-
-// Get dummy disaster alerts for testing
-const getDummyDisasterAlerts = () => {
-  const userLocation = getStoredLocation();
-  const calculateRealDistance = (lat, lng) => {
-    if (!userLocation || !userLocation.latitude || !userLocation.longitude) {
-      return 1000; // Default large distance if no user location
-    }
-    return calculateDistance(userLocation.latitude, userLocation.longitude, lat, lng);
-  };
-
-  const dummyAlerts = [
-    {
-      id: 'eq-2023-03-15-turkey',
-      title: 'Magnitude 5.6 Earthquake in Turkey',
-      description: 'A magnitude 5.6 earthquake occurred in eastern Turkey. No major damage reported.',
-      link: 'https://example.com/earthquake-turkey',
-      publicationDate: '2023-03-15T08:34:21Z',
-      category: 'Earthquake',
-      latitude: 38.7223,
-      longitude: 43.4801
-    },
-    {
-      id: 'fl-2023-03-14-italy',
-      title: 'Flooding in Northern Italy',
-      description: 'Heavy rainfall has caused significant flooding in several northern Italian cities.',
-      link: 'https://example.com/flooding-italy',
-      publicationDate: '2023-03-14T16:45:00Z',
-      category: 'Flood',
-      latitude: 45.4654,
-      longitude: 9.1859
-    },
-    {
-      id: 'wf-2023-03-13-california',
-      title: 'Wildfire in Southern California',
-      description: 'A fast-moving wildfire has burned over 500 acres in San Bernardino County.',
-      link: 'https://example.com/wildfire-california',
-      publicationDate: '2023-03-13T21:15:33Z',
-      category: 'Wildfire',
-      latitude: 34.1083,
-      longitude: -117.2898
-    },
-    {
-      id: 'tc-2023-03-12-fiji',
-      title: 'Tropical Cyclone Approaching Fiji',
-      description: 'A category 3 tropical cyclone is expected to make landfall in Fiji within 48 hours.',
-      link: 'https://example.com/cyclone-fiji',
-      publicationDate: '2023-03-12T09:30:15Z',
-      category: 'Tropical Cyclone',
-      latitude: -17.7134,
-      longitude: 178.0650
-    },
-    {
-      id: 'dr-2023-03-11-ethiopia',
-      title: 'Drought Conditions Worsen in Ethiopia',
-      description: 'Eastern regions of Ethiopia are experiencing severe drought conditions affecting crop yields.',
-      link: 'https://example.com/drought-ethiopia',
-      publicationDate: '2023-03-11T14:20:45Z',
-      category: 'Drought',
-      latitude: 9.1450,
-      longitude: 40.4897
-    },
-    {
-      id: 'ls-2023-03-10-nepal',
-      title: 'Landslide in Central Nepal',
-      description: 'A landslide has blocked a major highway in central Nepal following heavy rainfall.',
-      link: 'https://example.com/landslide-nepal',
-      publicationDate: '2023-03-10T11:05:38Z',
-      category: 'Landslide',
-      latitude: 27.7172,
-      longitude: 85.3240
-    }
-  ];
-
-  // Calculate real distances based on user location
-  return dummyAlerts.map(alert => ({
-    ...alert,
-    distance: calculateRealDistance(alert.latitude, alert.longitude)
-  }));
-};
-
-// Fallback: Get dummy disaster news for testing
-const getDummyDisasterNews = () => {
-  const userLocation = getStoredLocation();
-  const calculateRealDistance = (lat, lng) => {
-    if (!userLocation || !userLocation.latitude || !userLocation.longitude) {
-      return 1000; // Default large distance if no user location
-    }
-    return calculateDistance(userLocation.latitude, userLocation.longitude, lat, lng);
-  };
-
-  const dummyNews = [
-    {
-      id: '1',
-      title: 'Severe Flooding Affects Coastal Regions',
-      description: 'Heavy rainfall has caused significant flooding in coastal areas, with emergency services conducting evacuations.',
-      content: 'Rising water levels have forced hundreds of residents to evacuate their homes as emergency services work to mitigate the damage...',
-      source: 'Weather Alert Network',
-      url: '#',
-      imageUrl: 'https://via.placeholder.com/400x200?text=Flooding',
-      publishedAt: '2023-03-13T08:30:00Z',
-      type: 'disaster',
-      category: 'flood',
-      latitude: 37.7749,
-      longitude: -122.4194
-    },
-    {
-      id: '2',
-      title: 'Magnitude 5.8 Earthquake Reported',
-      description: 'A moderate earthquake was detected early this morning. No major damage has been reported.',
-      content: 'Geological Survey confirms a magnitude 5.8 earthquake occurred at approximately 3:45 AM local time. The epicenter was located about 20 miles offshore...',
-      source: 'Geological Monitor',
-      url: '#',
-      imageUrl: 'https://via.placeholder.com/400x200?text=Earthquake',
-      publishedAt: '2023-03-12T15:45:00Z',
-      type: 'disaster',
-      category: 'earthquake',
-      latitude: 37.8044,
-      longitude: -122.2712
-    },
-    {
-      id: '3',
-      title: 'Wildfire Contained After Three Days',
-      description: 'Firefighters have successfully contained the wildfire that threatened several communities.',
-      content: 'After three days of continuous efforts, fire departments from three counties have managed to contain the wildfire that burned through approximately 500 acres...',
-      source: 'Emergency Response Daily',
-      url: '#',
-      imageUrl: 'https://via.placeholder.com/400x200?text=Wildfire',
-      publishedAt: '2023-03-11T19:15:00Z',
-      type: 'disaster',
-      category: 'wildfire',
-      latitude: 38.5816,
-      longitude: -121.4944
-    },
-    {
-      id: '4',
-      title: 'Hurricane Warning Issued for Coastal Areas',
-      description: 'Meteorologists have issued a hurricane warning as a strong storm system approaches the coast.',
-      content: 'Residents in coastal areas are advised to prepare for strong winds and heavy rainfall as Hurricane Laura approaches...',
-      source: 'National Weather Center',
-      url: '#',
-      imageUrl: 'https://via.placeholder.com/400x200?text=Hurricane',
-      publishedAt: '2023-03-10T12:30:00Z',
-      type: 'disaster',
-      category: 'hurricane',
-      latitude: 27.9506,
-      longitude: -82.4572
-    },
-    {
-      id: '5',
-      title: 'Tornado Touches Down in Midwest',
-      description: 'A tornado briefly touched down in rural areas, causing minimal damage to structures.',
-      content: 'Weather services confirmed a small tornado touched down for approximately three minutes, damaging several farm buildings but causing no injuries...',
-      source: 'Storm Tracker News',
-      url: '#',
-      imageUrl: 'https://via.placeholder.com/400x200?text=Tornado',
-      publishedAt: '2023-03-09T16:45:00Z',
-      type: 'disaster',
-      category: 'tornado',
-      latitude: 41.8781, // Chicago coordinates
-      longitude: -87.6298
-    }
-  ];
-
-  // Calculate real distances based on user location
-  return dummyNews.map(news => ({
-    ...news,
-    distance: calculateRealDistance(news.latitude, news.longitude)
-  }));
 };

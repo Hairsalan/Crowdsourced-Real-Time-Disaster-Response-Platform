@@ -12,9 +12,26 @@ const PostSchema = new Schema({
   },
   type: {
     type: String,
-    enum: ['fire', 'flood', 'earthquake', 'hurricane', 'tornado', 'other'],
+    enum: ['fire', 'flood', 'earthquake', 'hurricane', 'tornado', 'other', 'news'],
     required: true
   },
+  // Image path for post attachments
+  imagePath: {
+    type: String
+  },
+  // External ID for news items
+  externalId: {
+    type: String,
+    index: true
+  },
+  // Source for news items
+  source: String,
+  // Category for news items
+  category: String,
+  // Link for news items
+  link: String,
+  // Published date for news items
+  publishedAt: Date,
   location: {
     type: {
       type: String,
@@ -48,6 +65,10 @@ const PostSchema = new Schema({
     type: Number,
     default: 0
   },
+  votes: [{
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    voteType: { type: String, enum: ['upvote', 'downvote'] }
+  }],
   comments: [{
     text: String,
     author: String,
@@ -55,6 +76,13 @@ const PostSchema = new Schema({
     createdAt: {
       type: Date,
       default: Date.now
+    },
+    isPinned: {
+      type: Boolean,
+      default: false
+    },
+    imagePath: {
+      type: String
     }
   }]
 });

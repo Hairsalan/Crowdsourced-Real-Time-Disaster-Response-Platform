@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { useNavigate, useLocation } from "react-router-dom"
 import { 
   getCurrentLocation, 
   getStoredLocation, 
@@ -15,8 +16,11 @@ function LocationSettings() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
+  const [redirecting, setRedirecting] = useState(false)
   const [radiusMiles, setRadiusMiles] = useState(50)
   const { user, updateUserLocation, updateMyLocation, token } = useAuth()
+  const navigate = useNavigate()
+  const locationState = useLocation().state
 
   // Load stored location on component mount
   useEffect(() => {
@@ -49,7 +53,23 @@ function LocationSettings() {
     if (user && user.radiusMiles && !storedLocation?.radiusMiles) {
       setRadiusMiles(user.radiusMiles)
     }
-  }, [user])
+  }, [])
+
+  // Handler for location success - common for both detect and manual
+  const handleLocationSuccess = async (successMessage) => {
+    setSuccess(successMessage)
+    
+    // If we came from the Report page via redirect, go back there after setting location
+    if (locationState && locationState.returnPath === '/report') {
+      setRedirecting(true)
+      setSuccess(successMessage + " Redirecting to report page...")
+      
+      // Wait a moment to show the success message before redirecting
+      setTimeout(() => {
+        navigate('/report')
+      }, 1500)
+    }
+  }
 
   // Handle automatic location detection
   const handleDetectLocation = async () => {
@@ -61,20 +81,56 @@ function LocationSettings() {
     setSuccess("")
     
     try {
+      // First get the user's geolocation coordinates
       const position = await getCurrentLocation()
+      
+      // First set location to show coordinates while we wait for geocoding
       setLocation(position)
+      setAddress(`${position.latitude.toFixed(6)}, ${position.longitude.toFixed(6)}`)
       
-      // Reverse geocode to get readable address
-      const addressData = await reverseGeocode(
-        position.latitude,
-        position.longitude
-      )
-      setAddress(addressData.displayName)
+      // Then try to get a better address
+      try {
+        // Geocode with improved function
+        const addressData = await reverseGeocode(position.latitude, position.longitude)
+        
+        // Add detailed address to the position data
+        if (addressData && addressData.displayName) {
+          console.log("Successfully geocoded address:", addressData.displayName);
+          
+          // Update the UI with the proper address format
+          setAddress(addressData.displayName);
+          
+          // Update position with detailed address info
+          position.displayName = addressData.displayName;
+          
+          // Add components if available
+          if (addressData.city) position.city = addressData.city;
+          if (addressData.state) position.state = addressData.state;
+          if (addressData.country) position.country = addressData.country;
+          if (addressData.postcode) position.postcode = addressData.postcode;
+          
+          // Save all the combined data
+          localStorage.setItem('userLocation', JSON.stringify(position));
+          setLocation(position);
+        }
+        
+        // Even if geocoding didn't give a proper address, we still have coordinates
+        setSuccess("Location detected and saved successfully");
+      } catch (geocodeError) {
+        // Reverse geocoding failed, but location was still saved with coordinates
+        console.warn("Reverse geocoding failed, using coordinates instead:", geocodeError);
+        setSuccess("Location saved with coordinates only (geocoding failed)");
+      }
       
-      // Update on backend using the context method
-      await updateMyLocation(position.latitude, position.longitude, radiusMiles)
+      // Try to update location on the server
+      try {
+        await updateMyLocation(position.latitude, position.longitude, radiusMiles)
+      } catch (backendError) {
+        console.warn("Backend location update failed, but location was saved locally:", backendError);
+        // Don't set an error - we still have the location saved locally
+      }
       
-      setSuccess("Location detected and saved successfully")
+      handleLocationSuccess("Location detected and saved successfully")
     } catch (error) {
       setError(error.message || "Failed to detect location")
       console.error("Geolocation error:", error)
@@ -97,18 +153,27 @@ function LocationSettings() {
     setSuccess("")
     
     try {
+      console.log("Attempting to geocode manual location:", manualLocation);
+      // Try to geocode the user input
       const geocodedLocation = await storeManualLocation(manualLocation)
+      
+      // Update the UI immediately
       setLocation(geocodedLocation)
       setAddress(geocodedLocation.displayName || manualLocation)
       
-      // Update on backend using the context method
-      await updateMyLocation(
-        geocodedLocation.latitude, 
-        geocodedLocation.longitude, 
-        radiusMiles
-      )
+      // Try to update on the server
+      try {
+        await updateMyLocation(
+          geocodedLocation.latitude, 
+          geocodedLocation.longitude, 
+          radiusMiles
+        )
+      } catch (backendError) {
+        console.warn("Backend location update failed, but location was saved locally:", backendError);
+        // Don't set error - we still have the location saved locally
+      }
       
-      setSuccess("Location set successfully")
+      handleLocationSuccess("Location set successfully")
     } catch (error) {
       setError(error.message || "Failed to set location")
       console.error("Manual location error:", error)
@@ -122,31 +187,34 @@ function LocationSettings() {
     const newRadius = parseInt(e.target.value, 10)
     setRadiusMiles(newRadius)
     
-    // If location is already set, update backend with new radius
-    if (location) {
-      try {
-        setLoading(true)
-        
-        // Update location in localStorage
-        const updatedLocation = updateLocationRadius(newRadius)
-        
-        // Update location in context
-        updateUserLocation(updatedLocation)
-        
-        // Update on backend using the context method
-        await updateMyLocation(
-          location.latitude,
-          location.longitude,
-          newRadius
-        )
-        
-        setSuccess("Alert radius updated successfully")
-        setLoading(false)
-      } catch (error) {
-        setError("Failed to update alert radius")
-        console.error("Radius update error:", error)
-        setLoading(false)
-      }
+    // Debounce the radius updates to reduce API calls and state changes
+    // Only update the backend if we have a location and are not already loading
+    if (location && !loading) {
+      // Add a small delay to avoid multiple rapid updates
+      clearTimeout(window.radiusUpdateTimeout);
+      
+      window.radiusUpdateTimeout = setTimeout(async () => {
+        try {
+          setLoading(true)
+          
+          // Update location in localStorage first
+          const updatedLocation = updateLocationRadius(newRadius)
+          
+          // Use the updateMyLocation which already handles both context updates
+          await updateMyLocation(
+            location.latitude,
+            location.longitude,
+            newRadius
+          )
+          
+          setSuccess("Alert radius updated successfully")
+          setLoading(false)
+        } catch (error) {
+          setError("Failed to update alert radius")
+          console.error("Radius update error:", error)
+          setLoading(false)
+        }
+      }, 500); // 500ms debounce
     }
   }
 

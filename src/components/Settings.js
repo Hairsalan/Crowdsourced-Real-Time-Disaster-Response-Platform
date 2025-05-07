@@ -4,7 +4,6 @@ import { useAuth } from "../AuthContext";
 function Settings() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [notifications, setNotifications] = useState(false);
   const [radius, setRadius] = useState(50);
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
@@ -14,7 +13,6 @@ function Settings() {
     // Load user data if available
     if (user) {
       setUsername(user.username || "");
-      setNotifications(user.notifications || false);
       setRadius(user.radiusMiles || 50);
     }
   }, [user]);
@@ -41,7 +39,6 @@ function Settings() {
         body: JSON.stringify({
           username: username,
           password: password.length > 0 ? password : undefined,
-          notifications,
           radiusMiles: radius
         })
       });
@@ -54,7 +51,7 @@ function Settings() {
       // Update radius in location context if needed
       if (user && user.radiusMiles !== radius) {
         const location = JSON.parse(localStorage.getItem('userLocation') || '{}');
-        if (location) {
+        if (location && location.latitude && location.longitude) {
           location.radiusMiles = radius;
           localStorage.setItem('userLocation', JSON.stringify(location));
           updateUserLocation(location);
@@ -115,21 +112,6 @@ function Settings() {
           />
           <p style={helperTextStyle}>
             Enter a new password only if you want to change it
-          </p>
-        </div>
-        
-        <div style={formGroupStyle}>
-          <label style={checkboxLabelStyle}>
-            <input
-              type="checkbox"
-              checked={notifications}
-              onChange={(e) => setNotifications(e.target.checked)}
-              style={checkboxStyle}
-            />
-            <span>Enable Push Notifications</span>
-          </label>
-          <p style={helperTextStyle}>
-            Receive alerts about disasters in your area
           </p>
         </div>
         
@@ -208,22 +190,6 @@ const inputStyle = {
     borderColor: '#007bff',
     outline: 'none',
   }
-};
-
-const checkboxLabelStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '10px',
-  cursor: 'pointer',
-  fontWeight: 'bold',
-  fontSize: '16px',
-  color: '#333',
-};
-
-const checkboxStyle = {
-  width: '18px',
-  height: '18px',
-  cursor: 'pointer',
 };
 
 const rangeContainerStyle = {

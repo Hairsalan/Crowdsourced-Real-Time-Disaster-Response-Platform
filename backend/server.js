@@ -4,6 +4,9 @@ const bodyParser = require('body-parser');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
 
 // Import models
@@ -20,7 +23,14 @@ mongoose.connect(MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-.then(() => console.log('MongoDB connected successfully'))
+.then(() => {
+  console.log('MongoDB connected successfully');
+  
+  // Ensure the geospatial index exists
+  Post.collection.createIndex({ "location.coordinates": "2dsphere" })
+    .then(() => console.log("Geospatial index created successfully"))
+    .catch(err => console.error("Error creating geospatial index:", err));
+})
 .catch(err => {
   console.error('MongoDB connection error:', err);
   process.exit(1);
@@ -70,6 +80,46 @@ const checkRole = (roles) => {
     }
   };
 };
+
+// Ensure uploads directory exists
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+// Add multer for file uploads
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    // Create a unique filename with original extension
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const fileExt = path.extname(file.originalname);
+    cb(null, uniqueSuffix + fileExt);
+  }
+});
+
+// File filter to allow only images
+const fileFilter = (req, file, cb) => {
+  if (file.mimetype.startsWith('image/')) {
+    cb(null, true);
+  } else {
+    cb(new Error('Only image files are allowed!'), false);
+  }
+};
+
+// Create multer upload instance
+const upload = multer({ 
+  storage: storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  },
+  fileFilter: fileFilter
+});
+
+// Serve static files from the uploads directory
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Auth Routes
 app.post('/api/signup', async (req, res) => {
@@ -228,127 +278,115 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// GET posts with location filtering
+// Get posts in user's radius
 app.get('/api/posts', async (req, res) => {
   try {
-    console.log('Fetching posts with location filtering...');
+    // Parse query parameters
+    const radius = Number(req.query.radius) || 50; // Default to 50 miles
+    let lat = req.query.lat ? Number(req.query.lat) : null;
+    let lng = req.query.lng ? Number(req.query.lng) : null;
+    const type = req.query.type; // Filter by post type (news, fire, etc.)
+    const user = req.user; // This will be null if no token or undefined if token is bad
     
-    // Get user location and radius if user is authenticated
-    let userLocation = null;
-    let radiusMiles = 50; // Default radius
+    // Build query object
+    const query = {};
     
-    // Check for authentication token
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-    
-    if (token) {
-      try {
-        // Verify the token and get user ID
-        const decoded = jwt.verify(token, JWT_SECRET);
-        const userId = decoded.id;
-        
-        // Get user data
-        const user = await User.findById(userId);
-        
-        if (user && user.location && user.location.coordinates && user.location.coordinates.length === 2) {
-          userLocation = {
-            longitude: user.location.coordinates[0],
-            latitude: user.location.coordinates[1]
-          };
-          radiusMiles = user.radiusMiles || 50;
-          console.log(`User ${user.username} location found, using radius: ${radiusMiles} miles`);
-        }
-      } catch (error) {
-        console.error('Token validation error:', error);
-        // Continue without filtering if token is invalid
+    // Add type filter if provided
+    if (type) {
+      if (type.startsWith('!')) {
+        // Handle exclusion format: !news means exclude news posts
+        const excludeType = type.substring(1);
+        query.type = { $ne: excludeType };
+        console.log(`Excluding posts with type: ${excludeType}`);
+      } else {
+        // Standard case: exact match
+        query.type = type;
       }
     }
     
-    // Override user location with the query parameters if provided
-    // This is useful for debugging and testing
-    if (req.query.lat && req.query.lng) {
-      const queryLat = parseFloat(req.query.lat);
-      const queryLng = parseFloat(req.query.lng);
-      
-      if (!isNaN(queryLat) && !isNaN(queryLng)) {
-        userLocation = {
-          latitude: queryLat,
-          longitude: queryLng
-        };
-        console.log(`Using query location override: ${queryLat}, ${queryLng}`);
-      }
+    // Add externalId filter if provided
+    if (req.query.externalId) {
+      query.externalId = req.query.externalId;
     }
     
-    // Get optional radius override from query params
-    if (req.query.radius) {
-      const queryRadius = parseInt(req.query.radius, 10);
-      if (!isNaN(queryRadius) && queryRadius > 0 && queryRadius <= 200) {
-        radiusMiles = queryRadius;
-        console.log(`Using query radius override: ${radiusMiles} miles`);
-      }
-    }
+    // Get posts from database
+    let posts = [];
     
-    // If we have user location, filter posts by direct calculation instead of MongoDB geo query
-    let posts;
-    if (userLocation) {
-      console.log(`Filtering posts within ${radiusMiles} miles of user location [${userLocation.latitude}, ${userLocation.longitude}]`);
-      
-      // Get all posts and filter manually
-      posts = await Post.find().sort({ createdAt: -1 });
-      
-      // Manual filtering using Haversine formula
-      posts = posts.filter(post => {
-        if (!post.location || !post.location.coordinates || post.location.coordinates.length < 2) {
-          return false;
-        }
-        
-        const postLng = post.location.coordinates[0];
-        const postLat = post.location.coordinates[1];
-        
-        // Earth's radius in km
-        const R = 6371;
-        
-        // Convert coordinates to radians
-        const lat1 = userLocation.latitude * Math.PI / 180;
-        const lon1 = userLocation.longitude * Math.PI / 180;
-        const lat2 = postLat * Math.PI / 180;
-        const lon2 = postLng * Math.PI / 180;
-        
-        // Haversine formula
-        const dLat = lat2 - lat1;
-        const dLon = lon2 - lon1;
-        const a = 
-          Math.sin(dLat/2) * Math.sin(dLat/2) +
-          Math.cos(lat1) * Math.cos(lat2) * 
-          Math.sin(dLon/2) * Math.sin(dLon/2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        const distanceKm = R * c;
-        const distanceMiles = distanceKm * 0.621371;
-        
-        console.log(`Post "${post.title}" at [${postLat}, ${postLng}] is ${distanceMiles.toFixed(2)} miles from user location`);
-        
-        return distanceMiles <= radiusMiles;
-      });
-      
-      console.log(`Found ${posts.length} posts within radius`);
+    // Get posts with or without location filtering
+    if (!lat || !lng) {
+      posts = await Post.find(query)
+                       .sort({ createdAt: -1 })
+                       .limit(100);
+      console.log(`Retrieved ${posts.length} posts without location filtering. Type filter: ${type || 'none'}`);
     } else {
-      // If no location, return all posts
-      console.log('No user location available, returning all posts');
-      posts = await Post.find().sort({ createdAt: -1 });
+      // Add location filter to query
+      query['location.coordinates'] = {
+          $near: {
+            $geometry: {
+              type: 'Point',
+              coordinates: [lng, lat]
+            },
+            $maxDistance: radius * 1609.34 // Convert miles to meters
+          }
+      };
+      
+      posts = await Post.find(query)
+                     .sort({ createdAt: -1 })
+        .limit(100);
+      console.log(`Retrieved ${posts.length} posts within ${radius} miles of [${lat}, ${lng}]. Type filter: ${type || 'none'}`);
     }
     
-    res.json(posts);
+    // Get all unique author IDs from the posts and comments
+    const authorIds = new Set();
+    posts.forEach(post => {
+      authorIds.add(post.authorId.toString());
+      post.comments.forEach(comment => {
+        if (comment.authorId) {
+          authorIds.add(comment.authorId.toString());
+        }
+      });
+    });
+    
+    // Fetch user roles for all authors
+    const users = await User.find({
+      _id: { $in: Array.from(authorIds) }
+    }).select('_id role');
+    
+    // Create a mapping of user ID to role
+    const userRoles = {};
+    users.forEach(user => {
+      userRoles[user._id.toString()] = user.role;
+    });
+    
+    // Prepare posts with user roles data
+    const postsWithRoles = posts.map(post => {
+      const postObj = post.toObject();
+      postObj.userRoles = userRoles;
+      return postObj;
+    });
+    
+    res.json(postsWithRoles);
   } catch (error) {
     console.error('Get posts error:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
 
-// Create new post with GeoJSON location
-app.post('/api/posts', authenticateToken, async (req, res) => {
+// Create new post with GeoJSON location and image upload
+app.post('/api/posts', authenticateToken, upload.single('image'), async (req, res) => {
   try {
-    console.log('Creating new post with location:', req.body);
-    const { title, description, type, location } = req.body;
+    console.log('Creating new post with data:', req.body);
+    const { title, description, type } = req.body;
+    let location = null;
+    
+    // Check if location is provided as a JSON string
+    if (req.body.location) {
+      try {
+        location = JSON.parse(req.body.location);
+      } catch (e) {
+        console.error('Failed to parse location data:', e);
+      }
+    }
     
     // Create post object
     const postData = {
@@ -359,12 +397,31 @@ app.post('/api/posts', authenticateToken, async (req, res) => {
       authorId: req.user.id
     };
     
+    // Add image path if file was uploaded
+    if (req.file) {
+      postData.imagePath = '/uploads/' + req.file.filename;
+    }
+    
+    // Add external data fields for news items
+    if (req.body.externalId) postData.externalId = req.body.externalId;
+    if (req.body.source) postData.source = req.body.source;
+    if (req.body.category) postData.category = req.body.category;
+    if (req.body.link) postData.link = req.body.link;
+    if (req.body.publishedAt) postData.publishedAt = new Date(req.body.publishedAt);
+    
     // Add location data in GeoJSON format if provided
     if (location && location.latitude !== undefined && location.longitude !== undefined) {
       postData.location = {
         type: 'Point',
         coordinates: [location.longitude, location.latitude], // MongoDB uses [longitude, latitude] order
         displayName: location.displayName || `${location.latitude}, ${location.longitude}`
+      };
+    } else if (location && location.coordinates && location.coordinates.length === 2) {
+      // Handle already-formatted GeoJSON coordinates
+      postData.location = {
+        type: 'Point',
+        coordinates: location.coordinates,
+        displayName: location.displayName || `${location.coordinates[1]}, ${location.coordinates[0]}`
       };
     }
     
@@ -481,10 +538,28 @@ app.post('/api/posts/:id/upvote', authenticateToken, async (req, res) => {
     console.log(`Upvoting post: ${req.params.id}`);
     const post = await Post.findById(req.params.id);
     if (!post) return res.status(404).json({ message: 'Post not found' });
-    
-    post.upvotes += 1;
+
+    const userId = req.user.id;
+    const existingVote = post.votes.find(v => v.userId.toString() === userId);
+
+    if (existingVote) {
+      if (existingVote.voteType === 'upvote') {
+        // User already upvoted, do nothing
+        return res.status(400).json({ message: 'You have already upvoted this post.' });
+      } else {
+        // Change downvote to upvote
+        existingVote.voteType = 'upvote';
+      }
+    } else {
+      // Add new upvote
+      post.votes.push({ userId, voteType: 'upvote' });
+    }
+
+    // Recalculate upvotes and downvotes
+    post.upvotes = post.votes.filter(v => v.voteType === 'upvote').length;
+    post.downvotes = post.votes.filter(v => v.voteType === 'downvote').length;
     await post.save();
-    
+
     res.json(post);
   } catch (error) {
     console.error('Upvote error:', error);
@@ -497,13 +572,109 @@ app.post('/api/posts/:id/downvote', authenticateToken, async (req, res) => {
     console.log(`Downvoting post: ${req.params.id}`);
     const post = await Post.findById(req.params.id);
     if (!post) return res.status(404).json({ message: 'Post not found' });
-    
-    post.downvotes += 1;
+
+    const userId = req.user.id;
+    const existingVote = post.votes.find(v => v.userId.toString() === userId);
+
+    if (existingVote) {
+      if (existingVote.voteType === 'downvote') {
+        // User already downvoted, do nothing
+        return res.status(400).json({ message: 'You have already downvoted this post.' });
+      } else {
+        // Change upvote to downvote
+        existingVote.voteType = 'downvote';
+      }
+    } else {
+      // Add new downvote
+      post.votes.push({ userId, voteType: 'downvote' });
+    }
+
+    // Recalculate upvotes and downvotes
+    post.upvotes = post.votes.filter(v => v.voteType === 'upvote').length;
+    post.downvotes = post.votes.filter(v => v.voteType === 'downvote').length;
     await post.save();
-    
+
     res.json(post);
   } catch (error) {
     console.error('Downvote error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Add comment to post with image upload
+app.post('/api/posts/:id/comment', authenticateToken, upload.single('image'), async (req, res) => {
+  try {
+    console.log(`Adding comment to post: ${req.params.id}`);
+    
+    // First, validate that the ID is a valid MongoDB ObjectId
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      console.error(`Invalid post ID format: ${req.params.id}`);
+      return res.status(400).json({ message: 'Invalid post ID format' });
+    }
+    
+    const post = await Post.findById(req.params.id);
+    if (!post) {
+      console.error(`Post not found with ID: ${req.params.id}`);
+      return res.status(404).json({ message: 'Post not found' });
+    }
+
+    const { text } = req.body;
+    const isPinned = req.body.isPinned === 'true'; // Convert string to boolean
+    
+    // Validate that at least text or image is provided
+    if ((!text || text.trim() === '') && !req.file) {
+      return res.status(400).json({ message: 'Comment must contain text or an image' });
+    }
+
+    // Only allow NGO users to pin comments
+    const canPinComment = req.user.role === 'ngo';
+    const shouldPinComment = isPinned && canPinComment;
+
+    // Create new comment object
+    const newComment = {
+      text: text ? text.trim() : '',
+      author: req.user.username,
+      authorId: req.user.id,
+      createdAt: new Date(),
+      isPinned: shouldPinComment
+    };
+    
+    // Add image path if file was uploaded
+    if (req.file) {
+      newComment.imagePath = '/uploads/' + req.file.filename;
+    }
+
+    // Add comment to post
+    post.comments.push(newComment);
+    await post.save();
+
+    // Get all unique author IDs from the post and comments
+    const authorIds = new Set();
+    authorIds.add(post.authorId.toString());
+    post.comments.forEach(comment => {
+      if (comment.authorId) {
+        authorIds.add(comment.authorId.toString());
+      }
+    });
+    
+    // Fetch user roles for all authors
+    const users = await User.find({
+      _id: { $in: Array.from(authorIds) }
+    }).select('_id role');
+    
+    // Create a mapping of user ID to role
+    const userRoles = {};
+    users.forEach(user => {
+      userRoles[user._id.toString()] = user.role;
+    });
+    
+    // Add user roles to post response
+    const postObj = post.toObject();
+    postObj.userRoles = userRoles;
+
+    res.status(201).json(postObj);
+  } catch (error) {
+    console.error('Comment error:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
@@ -915,6 +1086,147 @@ app.delete('/api/users/:id', authenticateToken, checkRole(['admin']), async (req
     res.json({ message: 'User deleted successfully' });
   } catch (error) {
     console.error('Delete user error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Change user role (admin and moderators with restrictions)
+app.post('/api/users/:id/role', authenticateToken, checkRole(['admin', 'moderator']), async (req, res) => {
+  try {
+    console.log(`Role change request from ${req.user.role} for user ${req.params.id}, new role: ${req.body.newRole}`);
+    
+    const { newRole } = req.body;
+    if (!newRole) {
+      return res.status(400).json({ message: 'New role is required' });
+    }
+
+    // Validate role
+    const validRoles = ['user', 'ngo', 'moderator', 'admin'];
+    if (!validRoles.includes(newRole)) {
+      return res.status(400).json({ message: 'Invalid role' });
+    }
+
+    const targetUser = await User.findById(req.params.id);
+    if (!targetUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Prevent self-role change
+    if (req.user.id === req.params.id) {
+      return res.status(403).json({ message: 'You cannot change your own role' });
+    }
+
+    // Moderator restrictions
+    if (req.user.role === 'moderator') {
+      // Moderators can: 1) change users to NGO, or 2) change NGOs back to users
+      const isValidModeratorChange = 
+        (targetUser.role === 'user' && newRole === 'ngo') || // user -> NGO
+        (targetUser.role === 'ngo' && newRole === 'user');   // NGO -> user
+
+      if (!isValidModeratorChange) {
+        console.log('Moderator tried to perform an unauthorized role change');
+        return res.status(403).json({ 
+          message: 'As a moderator, you can only promote users to NGO status or demote NGOs to regular users' 
+        });
+      }
+    }
+
+    // Update user's role
+    targetUser.role = newRole;
+    await targetUser.save();
+    
+    console.log(`User ${targetUser.username} role updated to ${newRole} by ${req.user.username}`);
+
+    res.json({
+      message: 'User role updated successfully',
+      user: {
+        _id: targetUser._id,
+        username: targetUser.username,
+        email: targetUser.email,
+        role: targetUser.role
+      }
+    });
+  } catch (error) {
+    console.error('Change user role error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Add a route for looking up posts by external ID
+app.get('/api/posts/lookup', authenticateToken, async (req, res) => {
+  try {
+    const { externalId } = req.query;
+    
+    if (!externalId) {
+      return res.status(400).json({ message: 'External ID is required' });
+    }
+    
+    const post = await Post.findOne({ externalId });
+    
+    if (!post) {
+      return res.status(404).json({ message: 'Post not found' });
+    }
+    
+    res.json(post);
+  } catch (error) {
+    console.error('Error looking up post by external ID:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Delete a comment
+app.delete('/api/posts/:postId/comments/:commentId', authenticateToken, checkRole(['admin', 'moderator']), async (req, res) => {
+  try {
+    const { postId, commentId } = req.params;
+    
+    // Find the post
+    const post = await Post.findById(postId);
+    if (!post) {
+      return res.status(404).json({ message: 'Post not found' });
+    }
+    
+    // Find the comment index
+    const commentIndex = post.comments.findIndex(comment => comment._id.toString() === commentId);
+    if (commentIndex === -1) {
+      return res.status(404).json({ message: 'Comment not found' });
+    }
+    
+    // Remove the comment from the array
+    post.comments.splice(commentIndex, 1);
+    
+    // Save the post
+    await post.save();
+    
+    // Get all unique author IDs for returning user roles
+    const authorIds = new Set();
+    authorIds.add(post.authorId.toString());
+    post.comments.forEach(comment => {
+      if (comment.authorId) {
+        authorIds.add(comment.authorId.toString());
+      }
+    });
+    
+    // Fetch user roles for all authors
+    const users = await User.find({
+      _id: { $in: Array.from(authorIds) }
+    }).select('_id role');
+    
+    // Create a mapping of user ID to role
+    const userRoles = {};
+    users.forEach(user => {
+      userRoles[user._id.toString()] = user.role;
+    });
+    
+    // Add user roles to post response
+    const postObj = post.toObject();
+    postObj.userRoles = userRoles;
+    
+    res.json({ 
+      message: 'Comment deleted successfully',
+      post: postObj
+    });
+  } catch (error) {
+    console.error('Delete comment error:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });

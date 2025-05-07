@@ -62,12 +62,38 @@ function News() {
   // Filter news by disaster type
   const filteredNews = filter === 'all' 
     ? news 
-    : news.filter(item => item.category?.toLowerCase() === filter || 
-                          item.title?.toLowerCase().includes(filter) || 
-                          item.description?.toLowerCase().includes(filter))
+    : news.filter(item => {
+        // Match on category, title, description, or source
+        return (
+          item.category?.toLowerCase().includes(filter) || 
+          item.title?.toLowerCase().includes(filter) || 
+          item.description?.toLowerCase().includes(filter) ||
+          (item.source?.toLowerCase().includes(filter))
+        )
+      })
 
-  // Group news by category for filtering options
-  const categories = ['earthquake', 'flood', 'wildfire', 'hurricane', 'tornado']
+  // Get unique categories from actual data for filtering options
+  const getUniqueCategories = () => {
+    // Extract all categories from news items
+    const categories = news.map(item => item.category?.toLowerCase())
+      .filter(Boolean) // Remove undefined/null values
+    
+    // Get unique values and sort them
+    return [...new Set(categories)].sort()
+  }
+
+  const categories = getUniqueCategories()
+  // Add predefined common disaster types if they're not in the current data
+  const commonCategories = ['earthquake', 'flood', 'wildfire', 'hurricane', 'tornado']
+  const allCategories = [...new Set([...categories, ...commonCategories.filter(cat => 
+    news.some(item => 
+      item.title?.toLowerCase().includes(cat) || 
+      item.description?.toLowerCase().includes(cat)
+    )
+  )])].sort()
+
+  // Add sources as filter options
+  const sources = [...new Set(news.map(item => item.source).filter(Boolean))]
 
   return (
     <div>
@@ -120,7 +146,7 @@ function News() {
           >
             All
           </button>
-          {categories.map(category => (
+          {allCategories.map(category => (
             <button 
               key={category}
               onClick={() => setFilter(category)}
@@ -139,6 +165,26 @@ function News() {
           Refresh News
         </button>
       </div>
+      
+      {/* Source filtering buttons */}
+      {sources.length > 1 && (
+        <div style={filterGroupStyle}>
+          <span style={filterLabelStyle}>Sources:</span>
+          {sources.map(source => (
+            <button 
+              key={source}
+              onClick={() => setFilter(source.toLowerCase())}
+              style={{
+                ...filterButtonStyle,
+                backgroundColor: filter === source.toLowerCase() ? '#28a745' : '#f0f0f0',
+                color: filter === source.toLowerCase() ? 'white' : '#333'
+              }}
+            >
+              {source}
+            </button>
+          ))}
+        </div>
+      )}
       
       {error && (
         <div style={errorStyle}>
@@ -189,17 +235,26 @@ function News() {
                   {item.category && (
                     <span style={getCategoryBadgeStyle(item.category)}>{item.category}</span>
                   )}
+                  {item.severity && (
+                    <span style={{
+                      ...getCategoryBadgeStyle(item.category),
+                      backgroundColor: getSeverityColor(item.severity),
+                      marginLeft: '5px'
+                    }}>
+                      {item.severity}
+                    </span>
+                  )}
                   <span style={sourceStyle}>Source: {item.source}</span>
-                  <span style={dateStyle}>{formatDate(item.publishedAt)}</span>
+                  <span style={dateStyle}>{formatDate(item.publishedAt || item.publicationDate)}</span>
                   {item.distance !== undefined && (
                     <span style={distanceStyle}>
                       {Math.round(item.distance)} miles away
                     </span>
                   )}
                 </div>
-                {item.url && (
+                {item.link && (
                   <a 
-                    href={item.url} 
+                    href={item.link} 
                     target="_blank" 
                     rel="noopener noreferrer" 
                     style={readMoreStyle}
@@ -271,6 +326,23 @@ const getCategoryBadgeStyle = (category) => {
     return { ...baseStyle, backgroundColor: '#20c997' }; // Teal
   } else {
     return { ...baseStyle, backgroundColor: '#6c757d' }; // Gray
+  }
+};
+
+// Helper function to get severity color
+const getSeverityColor = (severity) => {
+  switch (severity?.toLowerCase()) {
+    case 'extreme':
+      return '#d81b60'; // Deep pink
+    case 'severe':
+      return '#e53935'; // Red
+    case 'moderate':
+      return '#fb8c00'; // Orange
+    case 'minor':
+      return '#43a047'; // Green
+    case 'unknown':
+    default:
+      return '#78909c'; // Blue-grey
   }
 };
 

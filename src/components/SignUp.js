@@ -10,7 +10,7 @@ function SignUp() {
     email: "",
     password: "",
     confirmPassword: "",
-    role: "user"
+    role: "user" // Default role, no longer selectable by user
   })
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
@@ -26,7 +26,10 @@ function SignUp() {
   }, []);
 
   const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value })
+    // Skip updating role as it's no longer a field in the form
+    if (e.target.name !== 'role') {
+      setFormData({ ...formData, [e.target.name]: e.target.value })
+    }
     setError("") // Clear error when user types
   }
 
@@ -52,7 +55,7 @@ function SignUp() {
           username: formData.username,
           email: formData.email,
           password: formData.password,
-          role: formData.role
+          role: "user" // Hard-coded to "user", role selection removed
         }),
       })
 
@@ -70,8 +73,11 @@ function SignUp() {
       
       console.log("Login completed, token in storage:", !!localStorage.getItem('token'));
 
-      // Redirect directly to settings instead of dashboard
-      navigate("/settings", { replace: true });
+      // Redirect directly to settings with locationTabRequired flag
+      navigate("/settings", { 
+        replace: true,
+        state: { locationTabRequired: true }
+      });
     } catch (error) {
       setError(error.message)
     } finally {
@@ -80,14 +86,18 @@ function SignUp() {
   }
 
   return (
-    <div style={containerStyle}>
-      <h1 style={headerStyle}>Sign Up</h1>
-      {error && <div style={{ color: "red", marginBottom: "15px", textAlign: "center" }}>{error}</div>}
-      <form onSubmit={handleSubmit} style={formStyle}>
-        <div style={inputGroupStyle}>
-          <label htmlFor="username" style={labelStyle}>
-            Username:
-          </label>
+    <div>
+      <h2 className="text-center mb-4">Create your account</h2>
+      
+      {error && (
+        <div className="alert alert-danger">
+          {error}
+        </div>
+      )}
+      
+      <form onSubmit={handleSubmit}>
+        <div className="mb-3">
+          <label htmlFor="username">Username</label>
           <input
             type="text"
             id="username"
@@ -95,13 +105,12 @@ function SignUp() {
             value={formData.username}
             onChange={handleChange}
             required
-            style={inputStyle}
+            className="mb-3"
           />
         </div>
-        <div style={inputGroupStyle}>
-          <label htmlFor="email" style={labelStyle}>
-            Email:
-          </label>
+        
+        <div className="mb-3">
+          <label htmlFor="email">Email</label>
           <input
             type="email"
             id="email"
@@ -109,13 +118,12 @@ function SignUp() {
             value={formData.email}
             onChange={handleChange}
             required
-            style={inputStyle}
+            className="mb-3"
           />
         </div>
-        <div style={inputGroupStyle}>
-          <label htmlFor="password" style={labelStyle}>
-            Password:
-          </label>
+        
+        <div className="mb-3">
+          <label htmlFor="password">Password</label>
           <input
             type="password"
             id="password"
@@ -123,13 +131,12 @@ function SignUp() {
             value={formData.password}
             onChange={handleChange}
             required
-            style={inputStyle}
+            className="mb-3"
           />
         </div>
-        <div style={inputGroupStyle}>
-          <label htmlFor="confirmPassword" style={labelStyle}>
-            Confirm Password:
-          </label>
+        
+        <div className="mb-4">
+          <label htmlFor="confirmPassword">Confirm Password</label>
           <input
             type="password"
             id="confirmPassword"
@@ -137,104 +144,30 @@ function SignUp() {
             value={formData.confirmPassword}
             onChange={handleChange}
             required
-            style={inputStyle}
+            className="mb-1"
           />
         </div>
-        <div style={inputGroupStyle}>
-          <label htmlFor="role" style={labelStyle}>
-            Account Type:
-          </label>
-          <select
-            id="role"
-            name="role"
-            value={formData.role}
-            onChange={handleChange}
-            style={inputStyle}
-          >
-            <option value="user">Regular User</option>
-            <option value="ngo">NGO/Organization</option>
-            <option value="moderator">Moderator (Requires Approval)</option>
-            <option value="admin">Admin (Requires Approval)</option>
-          </select>
-        </div>
+        
         <button 
           type="submit" 
-          style={{
-            ...buttonStyle,
-            cursor: loading ? "not-allowed" : "pointer",
-            opacity: loading ? 0.7 : 1
+          className="btn w-full"
+          style={{ 
+            backgroundColor: 'var(--primary)',
+            color: 'var(--white)',
+            padding: 'var(--spacing-md)',
+            fontSize: '1rem'
           }}
           disabled={loading}
         >
           {loading ? "Creating Account..." : "Sign Up"}
         </button>
       </form>
-      <p style={paragraphStyle}>
-        Already have an account?{" "}
-        <Link to="/" style={linkStyle}>
-          Log in
-        </Link>
+      
+      <p className="text-center mt-4">
+        Already have an account? <Link to="/">Log in</Link>
       </p>
     </div>
   )
-}
-
-const containerStyle = {
-  maxWidth: "400px",
-  margin: "0 auto",
-  padding: "20px",
-  backgroundColor: "#f9f9f9",
-  borderRadius: "5px",
-  boxShadow: "0 2px 5px rgba(0,0,0,0.1)",
-}
-
-const headerStyle = {
-  textAlign: "center",
-  color: "#333",
-  marginBottom: "20px",
-}
-
-const formStyle = {
-  display: "flex",
-  flexDirection: "column",
-}
-
-const inputGroupStyle = {
-  marginBottom: "15px",
-}
-
-const labelStyle = {
-  marginBottom: "5px",
-  color: "#555",
-  display: "block",
-}
-
-const inputStyle = {
-  width: "100%",
-  padding: "8px",
-  border: "1px solid #ddd",
-  borderRadius: "4px",
-  fontSize: "16px",
-}
-
-const buttonStyle = {
-  padding: "10px",
-  backgroundColor: "#007bff",
-  color: "white",
-  border: "none",
-  borderRadius: "4px",
-  fontSize: "16px",
-  cursor: "pointer",
-}
-
-const paragraphStyle = {
-  textAlign: "center",
-  marginTop: "15px",
-}
-
-const linkStyle = {
-  color: "#007bff",
-  textDecoration: "none",
 }
 
 export default SignUp

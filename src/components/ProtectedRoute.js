@@ -4,7 +4,7 @@ import { useAuth } from '../AuthContext';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading, hasLocation } = useAuth();
-  const { pathname } = useLocation();
+  const location = useLocation();
   
   // If still loading auth state, show loading indicator
   if (loading) {
@@ -27,13 +27,13 @@ function ProtectedRoute({ children }) {
     return <Navigate to="/login" replace />;
   }
   
-  // If authenticated but no location set, redirect to location settings
-  // But only if we're not already on the settings page
-  if (!hasLocation && pathname !== '/settings') {
-    return <Navigate to="/settings" replace />;
+  // Check if user has location set - if not, redirect to settings page with location tab
+  // Only exempt the settings page itself from this check
+  if (!hasLocation && !location.pathname.includes('/settings')) {
+    return <Navigate to="/settings" state={{ locationTabRequired: true }} replace />;
   }
   
-  // If authenticated and location is set, render the protected content
+  // If authenticated and has location (or is going to settings), render the protected content
   return children;
 }
 

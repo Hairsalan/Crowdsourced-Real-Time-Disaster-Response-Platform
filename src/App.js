@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Route, Link, Routes, Navigate } from "react-router-dom"
+import { BrowserRouter as Router, Route, Link, Routes, Navigate, useLocation } from "react-router-dom"
 import { useState, useEffect } from "react"
 import Login from "./components/Login"
 import SignUp from "./components/SignUp"
@@ -20,70 +20,85 @@ function App() {
   
   // Custom Settings component with tabs
   const SettingsWithTabs = () => {
-    const { user } = useAuth();
+    const { user, hasLocation } = useAuth();
+    const location = useLocation();
+    
+    // Initialize state on component mount only
+    useEffect(() => {
+      // Check if redirected with locationTabRequired flag
+      if (location.state?.locationTabRequired || !hasLocation) {
+        setActiveSettingsTab('location');
+      }
+    }, [hasLocation, location.state]);
+    
     // Check if user is admin or moderator
     const isAdminOrModerator = user && (user.role === 'admin' || user.role === 'moderator');
-
+    
+    // Tab click handler
+    const handleTabChange = (tabName) => {
+      // Only allow changing tabs if user has location set
+      // Otherwise, force them to stay on the location tab
+      if (!hasLocation && tabName !== 'location') {
+        console.log("User must set location before accessing other tabs");
+        return;
+      }
+      
+      console.log("Changing tab to:", tabName);
+      setActiveSettingsTab(tabName);
+    };
+    
+    // Create warning message for users without location
+    const LocationRequiredMessage = () => {
+      if (!hasLocation && activeSettingsTab === 'location') {
+        return (
+          <div className="alert alert-warning">
+            <strong>Please set your location.</strong> This is required to use the application.
+          </div>
+        );
+      }
+      return null;
+    };
+    
     return (
-      <div>
-        <h1 style={{ borderBottom: "2px solid #007bff", paddingBottom: "10px" }}>Settings</h1>
+      <div className="card">
+        <h1 className="mb-4">Settings</h1>
         
-        <div style={{ display: "flex", marginBottom: "20px", borderBottom: "1px solid #dee2e6" }}>
+        <LocationRequiredMessage />
+        
+        <div className="tab-navigation mb-4">
           <button 
-            onClick={() => setActiveSettingsTab('profile')}
-            style={{
-              padding: "10px 20px",
-              backgroundColor: activeSettingsTab === 'profile' ? "#007bff" : "transparent",
-              color: activeSettingsTab === 'profile' ? "white" : "#333",
-              border: "none",
-              borderBottom: activeSettingsTab === 'profile' ? "2px solid #007bff" : "none",
-              cursor: "pointer",
-              fontWeight: "bold"
-            }}
+            onClick={() => handleTabChange('profile')}
+            className={`tab-button ${activeSettingsTab === 'profile' ? 'active' : ''}`}
           >
+            <i className="bi bi-person me-2"></i>
             Profile
           </button>
+          
           <button 
-            onClick={() => setActiveSettingsTab('location')}
-            style={{
-              padding: "10px 20px",
-              backgroundColor: activeSettingsTab === 'location' ? "#007bff" : "transparent",
-              color: activeSettingsTab === 'location' ? "white" : "#333",
-              border: "none",
-              borderBottom: activeSettingsTab === 'location' ? "2px solid #007bff" : "none",
-              cursor: "pointer",
-              fontWeight: "bold"
-            }}
+            onClick={() => handleTabChange('location')}
+            className={`tab-button ${activeSettingsTab === 'location' ? 'active' : ''}`}
           >
+            <i className="bi bi-geo-alt me-2"></i>
             Location
           </button>
+          
+          {/* Remove notifications tab completely */}
           
           {/* Only show UserManagement tab for admins and moderators */}
           {isAdminOrModerator && (
             <button
-              onClick={() => setActiveSettingsTab('userManagement')}
-              style={{
-                padding: "10px 20px",
-                backgroundColor: activeSettingsTab === 'userManagement' ? "#007bff" : "transparent",
-                color: activeSettingsTab === 'userManagement' ? "white" : "#333",
-                border: "none",
-                borderBottom: activeSettingsTab === 'userManagement' ? "2px solid #007bff" : "none",
-                cursor: "pointer",
-                fontWeight: "bold"
-              }}
+              onClick={() => handleTabChange('userManagement')}
+              className={`tab-button ${activeSettingsTab === 'userManagement' ? 'active' : ''}`}
             >
+              <i className="bi bi-people me-2"></i>
               User Management
             </button>
           )}
         </div>
         
-        {activeSettingsTab === 'profile' ? (
-          <Settings />
-        ) : activeSettingsTab === 'location' ? (
-          <LocationSettings />
-        ) : activeSettingsTab === 'userManagement' && isAdminOrModerator ? (
-          <UserManagementTab userRole={user.role} />
-        ) : null}
+        {activeSettingsTab === 'profile' && <Settings />}
+        {activeSettingsTab === 'location' && <LocationSettings />}
+        {activeSettingsTab === 'userManagement' && isAdminOrModerator && <UserManagementTab userRole={user.role} />}
       </div>
     );
   }
@@ -93,26 +108,21 @@ function App() {
       <AppContent 
         SettingsWithTabs={SettingsWithTabs} 
         activeSettingsTab={activeSettingsTab}
+        setActiveSettingsTab={setActiveSettingsTab}
       />
     </Router>
   )
 }
 
-function AppContent({ SettingsWithTabs }) {
+function AppContent({ SettingsWithTabs, activeSettingsTab, setActiveSettingsTab }) {
   const { isAuthenticated, loading, user, logout } = useAuth();
   
   // Show loading state while checking authentication
   if (loading) {
     return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh',
-        fontSize: '18px',
-        color: '#666'
-      }}>
-        Loading...
+      <div className="loading-container">
+        <div className="loading-spinner"></div>
+        <p>Loading...</p>
       </div>
     )
   }
@@ -126,24 +136,15 @@ function AppContent({ SettingsWithTabs }) {
 
   // Function to get role badge style based on role
   const getRoleBadgeStyle = (role) => {
-    const baseStyle = {
-      padding: "4px 8px",
-      borderRadius: "4px",
-      fontSize: "12px",
-      fontWeight: "bold",
-      color: "white",
-      marginRight: "15px"
-    };
-    
     switch (role) {
       case 'admin':
-        return { ...baseStyle, backgroundColor: "#dc3545" }; // Red
+        return 'badge badge-admin'; // Red
       case 'moderator':
-        return { ...baseStyle, backgroundColor: "#6f42c1" }; // Purple
+        return 'badge badge-moderator'; // Purple
       case 'ngo':
-        return { ...baseStyle, backgroundColor: "#28a745" }; // Green
+        return 'badge badge-ngo'; // Green
       default:
-        return { ...baseStyle, backgroundColor: "#17a2b8" }; // Teal
+        return 'badge badge-user'; // Teal
     }
   };
 
@@ -160,35 +161,23 @@ function AppContent({ SettingsWithTabs }) {
   // If not authenticated, show only login/signup
   if (!isAuthenticated) {
     return (
-      <div
-        style={{
-          fontFamily: "Arial, sans-serif",
-          margin: "0 auto",
-          maxWidth: "1200px",
-          padding: "20px",
-          backgroundColor: "#f0f0f0",
-          minHeight: "100vh",
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center"
-        }}
-      >
-        <div
-          style={{
-            backgroundColor: "white",
-            padding: "30px",
-            borderRadius: "8px",
-            boxShadow: "0 0 20px rgba(0,0,0,0.1)",
-            width: "100%",
-            maxWidth: "500px",
-          }}
-        >
-          <Routes>
-            <Route path="/" element={<Login />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<SignUp />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+      <div className="auth-layout">
+        <div className="auth-container">
+          <div className="auth-header">
+            <h1 className="auth-logo">
+              <i className="bi bi-shield-fill-check me-2"></i>
+              DisastAlert
+            </h1>
+            <p className="auth-tagline">Real-time disaster response platform</p>
+          </div>
+          <div className="auth-card">
+            <Routes>
+              <Route path="/" element={<Login />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/signup" element={<SignUp />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </div>
         </div>
       </div>
     );
@@ -196,92 +185,66 @@ function AppContent({ SettingsWithTabs }) {
 
   // If authenticated, show the full app with navbar
   return (
-    <div
-      style={{
-        fontFamily: "Arial, sans-serif",
-        margin: "0 auto",
-        maxWidth: "1200px",
-        padding: "20px",
-        backgroundColor: "#f0f0f0",
-        minHeight: "100vh",
-      }}
-    >
-      <nav
-        style={{
-          marginBottom: "20px",
-          backgroundColor: "#333",
-          padding: "10px",
-          borderRadius: "5px",
-        }}
-      >
-        <ul
-          style={{
-            listStyle: "none",
-            padding: 0,
-            display: "flex",
-            gap: "20px",
-            alignItems: "center",
-            margin: 0,
-          }}
-        >
-          <li>
-            <Link to="/dashboard" style={linkStyle}>
+    <div className="app-container">
+      <nav className="navbar">
+        <div className="navbar-brand">
+          <Link to="/dashboard" className="navbar-logo">
+            <i className="bi bi-shield-fill-check me-2"></i>
+            DisastAlert
+          </Link>
+        </div>
+        <ul className="navbar-nav">
+          <li className="nav-item">
+            <Link to="/dashboard" className="nav-link">
+              <i className="bi bi-speedometer2 me-1"></i>
               Dashboard
             </Link>
           </li>
-          <li>
-            <Link to="/posts" style={linkStyle}>
+          <li className="nav-item">
+            <Link to="/posts" className="nav-link">
+              <i className="bi bi-chat-square-text me-1"></i>
               Posts
             </Link>
           </li>
-          <li>
-            <Link to="/map" style={linkStyle}>
+          <li className="nav-item">
+            <Link to="/map" className="nav-link">
+              <i className="bi bi-geo-alt me-1"></i>
               Map
             </Link>
           </li>
-          <li>
-            <Link to="/report" style={linkStyle}>
+          <li className="nav-item">
+            <Link to="/report" className="nav-link">
+              <i className="bi bi-exclamation-triangle me-1"></i>
               Report
             </Link>
           </li>
-          
-          <li style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}>
-            {user && user.role && (
-              <span style={getRoleBadgeStyle(user.role)}>
-                {getRoleDisplayName(user.role)}
-              </span>
-            )}
-          </li>
-          <li>
-            <Link to="/settings" style={linkStyle}>
-              Settings
-            </Link>
-          </li>
-          <li>
-            <button 
-              onClick={handleLogout} 
-              style={{
-                background: "transparent",
-                border: "none",
-                color: "white",
-                fontWeight: "bold",
-                cursor: "pointer",
-              }}
-            >
-              Logout
-            </button>
-          </li>
         </ul>
+        <div className="navbar-right">
+          {user && user.role && (
+            <span className={getRoleBadgeStyle(user.role)}>
+              {getRoleDisplayName(user.role)}
+            </span>
+          )}
+          <div className="dropdown">
+            <button className="dropdown-toggle">
+              <span className="user-greeting">Hi, {user?.name?.split(' ')[0] || 'User'}</span>
+              <i className="bi bi-chevron-down ms-2"></i>
+            </button>
+            <div className="dropdown-menu">
+              <Link to="/settings" className="dropdown-item">
+                <i className="bi bi-gear me-2"></i>
+                Settings
+              </Link>
+              <button onClick={handleLogout} className="dropdown-item">
+                <i className="bi bi-box-arrow-right me-2"></i>
+                Logout
+              </button>
+            </div>
+          </div>
+        </div>
       </nav>
 
-      <div
-        style={{
-          backgroundColor: "white",
-          padding: "20px",
-          borderRadius: "5px",
-          boxShadow: "0 0 10px rgba(0,0,0,0.1)",
-        }}
-      >
+      <main className="main-content">
         <Routes>
           <Route 
             path="/" 
@@ -335,15 +298,15 @@ function AppContent({ SettingsWithTabs }) {
           <Route path="/signup" element={<SignUp />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
-      </div>
+      </main>
+      
+      <footer className="app-footer">
+        <div className="footer-content">
+          <p>&copy; {new Date().getFullYear()} DisastAlert. All rights reserved.</p>
+        </div>
+      </footer>
     </div>
   )
-}
-
-const linkStyle = {
-  color: "white",
-  textDecoration: "none",
-  fontWeight: "bold",
 }
 
 export default App
